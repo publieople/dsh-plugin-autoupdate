@@ -1,0 +1,6 @@
+# Inserted into a profile's config tree when this package appears in
+# dsh.profile.bundles. One row and no config on purpose: every knob is a tool
+# argument, so a user never has to hand-edit a profile to change behaviour.
+- insert:
+    - id: plugin-autoupdate
+      name: dsh-plugin-autoupdate
