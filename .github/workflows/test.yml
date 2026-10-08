@@ -1,0 +1,29 @@
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # engines says >=22; 24 is the current LTS line and runs the suite green.
+        node-version: ['22', '24']
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # The peer dependencies are devDependencies too, so a plain install is
+      # enough to run the suite. There are no runtime dependencies.
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      # The suite is offline: it only parses text and diffs manifests.
+      - name: Test
+        run: npm test

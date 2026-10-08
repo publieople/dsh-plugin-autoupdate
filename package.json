@@ -13,10 +13,19 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
+    "README.en.md",
     "LICENSE"
   ],
   "license": "MIT",
   "author": "publieople",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/publieople/dsh-plugin-autoupdate.git"
+  },
+  "homepage": "https://github.com/publieople/dsh-plugin-autoupdate#readme",
+  "bugs": {
+    "url": "https://github.com/publieople/dsh-plugin-autoupdate/issues"
+  },
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -28,19 +37,27 @@
     "auto-update",
     "maintenance",
     "supply-chain",
-    "profile"
+    "profile",
+    "cordis"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-tools": "^0.1.7-rc.1 || ^0.2.0-rc.1"
   },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-tools": "^0.1.7-rc.1 || ^0.2.0-rc.1"
+  },
   "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.1"
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     }

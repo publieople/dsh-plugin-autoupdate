@@ -1,0 +1,4 @@
+# Keep the working tree identical everywhere: this repo is edited from Windows
+# and CI runs on Linux, and mixed line endings show up as spurious diffs.
+* text=auto eol=lf
+*.cmd text eol=crlf

@@ -53,7 +53,25 @@ host-only 版已经覆盖「让 agent 帮我更新」。设置页的收益是给
 
 ## 待你拍板
 
-1. GitHub 账号/组织名与仓库名（决定 `repository` 字段与 README 徽章）
-2. npm 发布者（用你的账号发，还是我准备好产物你来 `npm publish`）
-3. 包名是否就用 `dsh-plugin-autoupdate`（已确认 npm 上未被占用）
-4. LICENSE 版权署名是否用 `publieople`
+1. ~~GitHub 账号/仓库名~~ —— 已用 gh CLI（账号 `publieople`）建好并推送
+2. npm 发布者：待定（用你的账号 `npm publish`，还是先用 GitHub Actions 的 OIDC trusted publishing）
+3. ~~包名~~ —— `dsh-plugin-autoupdate` 已确认未被占用
+4. LICENSE 版权署名 —— 现为 `publieople`，要改说一声
+
+## 仓库规范（对齐生态惯例）
+
+对照三个已进市场的插件仓库（`dsh-find-plugins` / `dsh-smooth-stream` / `dsh-purge`）后采用：
+
+| 惯例 | 出处 | 本仓库 |
+|---|---|---|
+| `README.md` + 第二语言 README | 3/3 都有 | `README.md`(中文) + `README.en.md` |
+| `.github/workflows/test.yml`（checkout@v6 / setup-node@v6 / matrix 22+24） | `dsh-find-plugins` | 已照搬 |
+| `.github/workflows/publish.yml`（tag 驱动 + npm OIDC，无长期 token） | `dsh-find-plugins` | 已照搬 |
+| peer 同时列进 `devDependencies`，CI 一次 `npm install` 就能跑测试 | `dsh-find-plugins` | 已采用 |
+| 提交 lockfile（`npm ci` 需要） | `dsh-find-plugins` | 已提交 `package-lock.json` |
+| `dsh.engines.dsh` 声明 | `@linxin666/*` 家族 | `>=0.2.0-rc.1` |
+| `AGENTS.md` 写给接手的 agent | `dsh-smooth-stream` | 已加（5 条不可违反约束） |
+| `repository` / `homepage` / `bugs` | 生态普遍 | 已填 |
+| `.gitattributes`（强制 LF） | 生态未用，但 Windows 编辑 + Linux CI 必需 | 已加 |
+
+未采用：`CHANGELOG.md` / `CONTRIBUTING.md` / `icon.svg` —— 三个参考仓库都没有（icon 只有 UI 类插件用）。

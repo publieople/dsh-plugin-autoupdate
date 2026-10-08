@@ -1,0 +1,47 @@
+name: publish
+
+# Publishing is tag-driven: bump the version, push a `v*` tag, and this publishes.
+# Nothing manual after that: no OTP, no token, no `npm publish` on a laptop.
+# Requires a trusted publisher configured on npmjs.com for this repository.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  # Required for OIDC: it lets npm verify the workflow identity instead of
+  # trusting a long-lived token.
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Published artifacts must pass on the LOWEST supported Node, not only on
+      # the version that happens to ship an npm CLI new enough for OIDC.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install
+        run: npm ci
+      - name: Test on the lowest supported Node
+        run: npm test
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: ''
+
+      # Never publish something that does not pass its own tests.
+      - name: Test
+        run: npm test
+
+      # No --provenance flag: a trusted publisher on a public repo attaches the
+      # attestation automatically.
+      - name: Publish
+        run: npm publish
