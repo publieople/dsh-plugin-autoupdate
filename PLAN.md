@@ -8,7 +8,7 @@
 |---|---|---|
 | M0 | 仓库与骨架（清单、cordis patch、CLI 契约、单测） | ✅ 已完成 |
 | M1 | host 侧真实组合验证（临时 profile 跑通 check/apply/rollback） | ✅ 已完成（25/25） |
-| M2 | 客户端页面（UniGetUI 式三视图） | 🚧 v0.2.0：主栏页面 + 侧栏入口 ✅，发现视图待做 |
+| M2 | 客户端页面（UniGetUI 式三视图） | 🚧 v0.2.0：主栏页面 + 侧栏入口 + 刷新/重启按钮 ✅；已安装/可用更新两视图 ✅；**发现视图待做** |
 | M3 | 发布到 npm + 打 tag | ⬜ 待做 |
 | M4 | 提交进插件目录（别人能搜到） | ⬜ 待做 |
 
@@ -83,6 +83,19 @@
   （能力门禁：桌面版报 409 + 原因，CLI/服务部署自重启；见 AGENTS.md 第 4 条）
 - jsdom 挂载测试用官方 `@deepseek-ai/dsh-client-test-runtime`
 
+### M2 剩余（你已确认要做，但排在后面）
+
+1. **发现视图**：借 DSH 市场的数据源，自己做「发现 + 安装」页（2026-10-09 你定的方向；当时说先不急）
+2. **忽略更新**：需要新增一份持久化状态（按插件名 + 版本记录忽略项），core 稳了再加
+3. 页面本地化（现在 label 是硬编码中文；生态惯例是 `ctx.locale.register` + 中英词典）
+
+### 已完成（v0.2.0，2026-10-09）
+
+- 座位：`main`（keyed slot）+ `sidebar.panellist` 图标 → 与对话页同级的主栏整页
+- 两个 tab：可用更新（勾选 / 批量应用 / 来源）/ 已安装（版本范围 / 来源 / 回滚）
+- 工具栏：重新加载 · 更新所选 · 全部更新 · `--latest` · 回滚 · 导出 CSV
+- 右上角：**刷新界面**（`location.reload()`）与**重启 DSH**（能力门禁：桌面宿主判为不支持并说明原因）
+
 ## M3 —— 发布
 
 1. 建 GitHub 仓库，把 `repository` / `homepage` / `bugs` 填回 `package.json`
@@ -102,9 +115,10 @@
 ## 待你拍板
 
 1. ~~GitHub 账号/仓库名~~ —— 已用 gh CLI（账号 `publieople`）建好并推送
-2. npm 发布者：待定（用你的账号 `npm publish`，还是先用 GitHub Actions 的 OIDC trusted publishing）
+2. **npm 发布者**：待定 —— 你在 npmjs.com 配 Trusted Publisher（我打 tag 自动发），还是你本地 `npm publish`
 3. ~~包名~~ —— `dsh-plugin-autoupdate` 已确认未被占用
-4. LICENSE 版权署名 —— 现为 `publieople`，要改说一声
+4. **LICENSE 版权署名** —— 现为 `publieople`，要改说一声
+5. **要不要现在发 0.2.0** —— 代码已过真实组合验证（42/42 + 14/14 live + CI 绿），可以直接发；也可以先把发现视图做完一起发
 
 ## 仓库规范（对齐生态惯例）
 
