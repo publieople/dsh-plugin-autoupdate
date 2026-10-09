@@ -8,7 +8,7 @@
 |---|---|---|
 | M0 | 仓库与骨架（清单、cordis patch、CLI 契约、单测） | ✅ 已完成 |
 | M1 | host 侧真实组合验证（临时 profile 跑通 check/apply/rollback） | ✅ 已完成（25/25） |
-| M2 | 客户端设置页（可选） | ⬜ 待定 |
+| M2 | 客户端设置页（UniGetUI 式三视图） | 🚧 进行中：host HTTP 层 ✅ |
 | M3 | 发布到 npm + 打 tag | ⬜ 待做 |
 | M4 | 提交进插件目录（别人能搜到） | ⬜ 待做 |
 
@@ -45,11 +45,32 @@
 5. 失败路径可读：CLI 不存在 / profile 不存在 / 无更新，返回结构化错误而不是抛异常
 6. 在本机真实 desktop profile 上只跑 `check`（只读），确认结果与 `pnpm outdated` 完全一致
 
-## M2 —— 设置页（可选）
+## M2 —— 设置页（进行中）
 
-host-only 版已经覆盖「让 agent 帮我更新」。设置页的收益是给人一个可视化入口。
+形态参照 UniGetUI：**已安装 / 可用更新 / 发现** 三个视图 + 统一工具栏 + 来源筛选。
+座位是 `settings.section`（独立页「插件更新」），不是 Plugins 里的 tab ——
+`settings.plugins.tab` 由 Plugins 区的 owner 在运行时声明，用户没装那个 bundle 时我们的 tab 无处安放。
+设置页 shell 只给 section 一个 `close()`，**导航权在 shell 手里**，所以第三方 section 不能跳到另一个 section。
 
-若要加：补 `dsh.client` + `exports['./client']` + 设置页 slot。注意 client 依赖要写在 **client bundle 导出的 `export const inject`** 里 —— `dsh.client.inject` 只是给预检/HMR diff 用的信息性元数据，不决定激活顺序。
+「发现」视图：**用插件市场的数据源自己做**（用户 2026-10-09 决定），暂缓，先用市场已有的页面。
+
+### 已完成：host HTTP 层（commit 1）
+
+- `lib/http.js`：`GET /plugin-autoupdate/status`、`POST /plugin-autoupdate/apply`、`POST /plugin-autoupdate/rollback`
+- 三条路由都是**裸 `webServer` 精确注册**（照 `dsh-market` 的做法）。关键原因：DSH 的 `/api` 栅栏是**前缀**路由，精确路由会盖过它 —— 所以 Host 信任检查必须自己做
+- 策略与 #729 一致：**读不设栅栏**（命名部署必须能用），**写要求 loopback 或已声明 authority**；`PLUGIN_AUTOUPDATE_TRUSTED_HOSTS` 可增补
+- 写操作要求 `confirm: true`，仍走同一批函数（`checkProfile` / `applyUpdate` / `rollback`），安全模型一条不改
+- 客户端是**可选注入**（`ctx.inject(['webServer'], …)`）：headless profile 没有 webServer 也照样拿到工具
+
+验证：`npm test` **20/20**（含 Host 信任、405/403/400、confirm 门禁）+
+`node scripts/m1-http-check.mjs m1test` **14/14**（真实 socket、真实 handler、真实 CLI、真实 profile：status → 405 → 伪造 Host 403 → 缺 confirm 400 → apply 改变 manifest → rollback 字节级还原）。
+
+### 待做（commit 2/3）
+
+- client：`src/client/*.tsx` + tsdown 构建 → `lib/client.js`；`exports['./client']`、`dsh.client.platform: 'web'`
+- 客户端依赖写在 **client bundle 导出的 `export const inject`** 里（`dsh.client.inject` 只是预检/HMR 用的信息性元数据）
+- 页面：已安装 / 可用更新两个视图先做（含勾选、批量应用、导出 CSV、快照列表）；「发现」后做
+- jsdom 挂载测试用官方 `@deepseek-ai/dsh-client-test-runtime`
 
 ## M3 —— 发布
 
