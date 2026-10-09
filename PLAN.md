@@ -8,7 +8,7 @@
 |---|---|---|
 | M0 | 仓库与骨架（清单、cordis patch、CLI 契约、单测） | ✅ 已完成 |
 | M1 | host 侧真实组合验证（临时 profile 跑通 check/apply/rollback） | ✅ 已完成（25/25） |
-| M2 | 客户端页面（UniGetUI 式四视图） | 🚧 v0.2.0：主栏页面 + 侧栏入口 + 刷新/重启 + 可用更新/已安装/发现/已锁定 ✅；**本地化待做** |
+| M2 | 客户端页面（UniGetUI 式四视图） | ✅ v0.2.0：主栏页面 + 侧栏入口 + 刷新/重启 + 可用更新/已安装/发现/已锁定 + 中英本地化；仅剩 jsdom 挂载测试 |
 | M3 | 发布到 npm + 打 tag | ⬜ 待做 |
 | M4 | 提交进插件目录（别人能搜到） | ⬜ 待做 |
 
@@ -85,7 +85,19 @@
 
 ### M2 剩余
 
-1. 页面本地化（现在文案是硬编码中文；生态惯例是 `ctx.locale.register` + 中英词典）—— **下一轮**
+- ✅ 页面本地化（2026-10-09，第四轮，见下）
+- ⬜ jsdom 挂载测试（官方 `@deepseek-ai/dsh-client-test-runtime`）
+
+### 已完成：中英本地化（2026-10-09，第四轮）
+
+- 参考三份已装插件的实现（`@linxin666/dsh-update`、`@linxin666/dsh-client-ui-plugin-manager`、
+  `dsh-better-sidebar`、`@agents-anywhere/dsh-bridge-next`）：一个命名空间 + 每语言一份词典，
+  `ctx.locale.register(NS, { zh, en })` 注册、`ctx.locale.bind(NS)` 读取、`ctx.locale.subscribe` 管语言切换重渲染
+- `src/client/locales.ts`（77 个 key：`zh` 是 key 全集与离线回退，`en` 逐 key 对齐）+
+  `src/client/i18n.ts`（apply 时抓住 locale 服务；服务缺席或拒绝时回退中文词典，绝不渲染出 key）
+- `src/client/index.tsx` 不再有硬编码文案；两个 slot 注册都声明 `locale: NS`
+- `test/client-bundle.test.mjs` 新增契约测试：zh/en 键集合必须相等、代码里 `translate("…")` 用到的 key
+  必须都在词典里、词典里不能有死 key（本文件抓到了正则漏掉带数字的 key：`error.catalog404`）
 
 ### 已完成：文档对齐（2026-10-09，第三轮）
 

@@ -1,0 +1,12 @@
+feat(client): 页面中英双语（zh/en 词典 + ctx.locale 席位）
+
+参考生态实现（@linxin666/dsh-update、dsh-better-sidebar、dsh-client-ui-plugin-manager）：
+一个命名空间 + 每语言一份词典，register 注册、bind 读取、subscribe 管切换。
+
+- src/client/locales.ts：77 个 key，zh 是 key 全集与离线回退，en 逐 key 对齐
+- src/client/i18n.ts：apply 时抓住 ctx.locale；服务缺席或拒绝时回退中文词典，绝不渲染出 key
+- src/client/index.tsx：去掉全部硬编码文案，两个 slot 注册声明 locale: NS，订阅语言切换重渲染
+- test/client-bundle.test.mjs：新增契约测试（键集合相等 / 用到的 key 都存在 / 词典无死 key）
+- AGENTS.md、PLAN.md：记下这条契约与第四轮
+
+57/57 测试在系统 node 与 DSH 自带 node 下均通过。

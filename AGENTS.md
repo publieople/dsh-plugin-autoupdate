@@ -64,6 +64,11 @@ window.__ModuleLoader__.load({ id: '<包名>', factory: (require) => { /* CJS �
 - 插件是 **host + client**：`dsh.client.platform: 'web'` + `exports['./client']` 指向构建出来的 `lib/client.js`。
   client 依赖写在 client bundle 导出的 `export const inject` 里（真实激活依据）；
   `dsh.client.inject` 只是给预检/HMR diff 用的信息性元数据。
+- **客户端文案不许写死在组件里。** 走 `ctx.locale.register(NS, { zh, en })` + `ctx.locale.bind(NS)`
+  （形态照 `@linxin666/dsh-update` / `dsh-better-sidebar`）：`src/client/locales.ts` 里 `zh` 是 key 全集
+  与离线回退，`en` 必须逐 key 对齐；slot 注册声明 `locale: NS`；语言切换靠 `ctx.locale.subscribe` 触发重渲染
+  （组件在渲染期取文案，所以没有订阅就不会跟着换）。`test/client-bundle.test.mjs` 离线守这三条：
+  键集合相等、代码里用到的 key 都在词典里、词典里没有死 key。
 
 ## 开发
 

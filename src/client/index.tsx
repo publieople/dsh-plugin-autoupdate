@@ -1,15 +1,22 @@
 /**
- * The settings page: 插件更新 / Plugin updates.
+ * The updates page: 插件更新 / Plugin updates.
  *
- * Shape follows UniGetUI: one tab per view (可用更新 / 已安装), a toolbar that acts
- * on a selection, and a source column. Everything it shows comes from the host's
- * /plugin-autoupdate routes, which delegate every version decision to the DSH CLI -
- * so this page cannot offer something `pnpm outdated` would not offer.
+ * Shape follows UniGetUI: one tab per view (可用更新 / 已安装 / 发现 / 已锁定), a
+ * toolbar that acts on a selection, and a source column. Everything it shows comes
+ * from the host's /plugin-autoupdate routes, which delegate every version decision
+ * to the DSH CLI - so this page cannot offer something `pnpm outdated` would not offer.
+ *
+ * Copy lives in ./locales.ts and is read through ./i18n.ts, the same two-file shape
+ * the neighbouring plugins use (@linxin666/dsh-update, dsh-client-ui-plugin-manager):
+ * one namespace registered in apply(), read back with locale.bind(NS). Adding a
+ * language is adding a dictionary - no component changes.
  *
  * Styles are inline on purpose: no CSS pipeline in the build, and the page stays
  * readable in any theme.
  */
 import { createElement as h, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { NS, attachLocale, subscribeLocale, translate as t } from './i18n'
+import { en, zh } from './locales'
 
 const ROUTE = '/plugin-autoupdate'
 const TAB_UPDATES = 'updates'
@@ -154,13 +161,18 @@ export function PluginUpdatesPage () {
   const [, setTick] = useState(0)
   const catalogTried = useRef(false)
 
+  // Strings are resolved while rendering, so a language switch has to re-draw the
+  // page: the locale service announces the change through subscribe().
+  const [, setLocaleRevision] = useState(0)
+  useEffect(() => subscribeLocale(() => setLocaleRevision((value) => value + 1)), [])
+
   const refresh = useCallback(async (quiet?: boolean) => {
     if (!quiet) setBusy(true)
     try {
       const { json } = await getStatus()
-      if (json && json.ok) { setStatus(json); setError('') } else { setError((json && json.reason) || 'status failed') }
+      if (json && json.ok) { setStatus(json); setError('') } else { setError((json && json.reason) || t('error.statusFailed')) }
     } catch (err) {
-      setError('无法连接宿主：' + String((err && (err as Error).message) || err))
+      setError(t('error.cannotReachHost', { reason: String((err && (err as Error).message) || err) }))
     }
     setBusy(false)
   }, [])
@@ -190,9 +202,9 @@ export function PluginUpdatesPage () {
     try {
       const { status: code, json } = await fn()
       if (json && json.ok) { setMessage(okText); setRestart(Boolean(json.restartRequired)) }
-      else setError('失败：' + ((json && json.reason) || ('HTTP ' + code)))
+      else setError(t('error.failed', { reason: (json && json.reason) || t('error.http', { code }) }))
     } catch (err) {
-      setError('失败：' + String((err && (err as Error).message) || err))
+      setError(t('error.failed', { reason: String((err && (err as Error).message) || err) }))
     }
     setBusy(false)
     await refresh(true)
@@ -200,11 +212,11 @@ export function PluginUpdatesPage () {
 
   const applyProfiles = (profiles: string[]) => run(
     () => post('/apply', { confirm: true, latest, profiles: profiles.join(',') }),
-    latest ? '已按 --latest 应用（仍受发布时长策略约束）' : '已应用范围内的更新',
+    latest ? t('message.appliedLatest') : t('message.appliedRange'),
   )
 
   const exportCsv = () => {
-    const rows: string[][] = [['profile', 'plugin', 'current', 'latest', 'source']]
+    const rows: string[][] = [[t('col.profile'), t('col.plugin'), t('col.current'), t('col.latest'), t('col.source')]]
     for (const row of updates) {
       const match = installed.find((item) => item.profile === row.profile && item.name === row.name)
       rows.push([row.profile, row.name, row.current, row.latest, match ? match.source : 'npm'])
@@ -227,14 +239,14 @@ export function PluginUpdatesPage () {
       if (json && json.ok === true) setCatalog(json)
       else {
         setCatalog(null)
-        const reason = json && json.reason ? String(json.reason) : ''
+        const detail = (json && json.reason ? String(json.reason) : '') || (body !== '' ? body.slice(0, 200) : '')
         setCatalogError(code === 404
-          ? '宿主没有 /catalog 路由（HTTP 404）—— 运行中的宿主插件还是旧版本。界面能刷新，宿主插件不能：完全退出 DSH（托盘图标 → 退出）再重开。'
-          : 'HTTP ' + code + (reason !== '' ? '：' + reason : (body !== '' ? '：' + body.slice(0, 200) : '')))
+          ? t('error.catalog404')
+          : (detail !== '' ? t('error.httpDetail', { code, reason: detail }) : t('error.http', { code })))
       }
     } catch (err) {
       setCatalog(null)
-      setCatalogError('读取目录失败：' + String((err && (err as Error).message) || err))
+      setCatalogError(t('error.catalogRead', { reason: String((err && (err as Error).message) || err) }))
     }
     setCatalogBusy(false)
   }, [])
@@ -249,22 +261,22 @@ export function PluginUpdatesPage () {
 
   const lockOne = (row: any) => run(
     () => post('/lock', { name: row.name, version: row.latest, profiles: row.profile }),
-    '已锁定 ' + row.name + '：不再提示它的更新（它仍会随范围升级，锁的是提示）',
+    t('message.locked', { name: row.name }),
   )
 
   const unlockOne = (lock: any) => run(
     () => post('/unlock', { name: lock.name, profiles: lock.profile }),
-    '已解锁 ' + lock.name,
+    t('message.unlocked', { name: lock.name }),
   )
 
   const installOne = async (entry: CatalogRow) => {
     const spec = entry.npm || entry.name
-    const where = allProfiles.length > 0 ? allProfiles.join(', ') : '当前 profile'
+    const where = allProfiles.length > 0 ? allProfiles.join(', ') : t('confirm.currentProfile')
     const proceed = typeof window !== 'undefined' && typeof window.confirm === 'function'
-      ? window.confirm('安装 ' + spec + ' 到 ' + where + '？\n\n装完需要重启 DSH 才会生效。')
+      ? window.confirm(t('confirm.install', { spec, where }))
       : true
     if (!proceed) return
-    await run(() => post('/install', { confirm: true, spec, profiles: allProfiles.join(',') }), '已安装 ' + spec + '（需要重启 DSH 生效）')
+    await run(() => post('/install', { confirm: true, spec, profiles: allProfiles.join(',') }), t('message.installed', { spec }))
     await refresh(true)
   }
 
@@ -283,25 +295,23 @@ export function PluginUpdatesPage () {
   const restartInfo = (status && status.restart) || null
   const restartSupported = Boolean(restartInfo && restartInfo.supported)
   const restartHint = restartSupported
-    ? '重启 DSH，让新装的宿主插件生效（界面会断开几秒）'
-    : ((restartInfo && restartInfo.reason) || '当前宿主不支持自重启')
+    ? t('page.restartHint')
+    : ((restartInfo && restartInfo.reason) || t('page.restartUnsupported'))
 
   const restartHost = async () => {
     if (!restartSupported) return
     const proceed = typeof window !== 'undefined' && typeof window.confirm === 'function'
-      ? window.confirm('重启 DSH？当前界面会断开，几秒后自动恢复。')
+      ? window.confirm(t('confirm.restart'))
       : true
     if (!proceed) return
     setBusy(true); setError(''); setMessage('')
     try {
       const { status: code, json } = await post('/restart', { confirm: true })
       if (json && json.ok) {
-        setMessage(json.mode === 'supervisor'
-          ? '正在重启：已交给进程管理器接管。'
-          : '正在重启：已安排自重启，界面断开几秒后会自己回来。')
-      } else setError('重启失败：' + ((json && json.reason) || ('HTTP ' + code)))
+        setMessage(json.mode === 'supervisor' ? t('message.restartSupervisor') : t('message.restartHelper'))
+      } else setError(t('error.restartFailed', { reason: (json && json.reason) || t('error.http', { code }) }))
     } catch (err) {
-      setError('重启失败：' + String((err && (err as Error).message) || err))
+      setError(t('error.restartFailed', { reason: String((err && (err as Error).message) || err) }))
     }
     setBusy(false)
   }
@@ -310,28 +320,28 @@ export function PluginUpdatesPage () {
   const allBlocked = busy || updates.length === 0
 
   const toolbar = h('div', { style: S.bar },
-    h('button', { style: S.btn, disabled: busy, onClick: () => { void refresh() } }, '重新加载'),
+    h('button', { style: S.btn, disabled: busy, onClick: () => { void refresh() } }, t('action.reload')),
     tab === TAB_UPDATES ? h('button', {
       style: { ...S.btn, ...S.btnPrimary, ...(selectedBlocked ? S.btnOff : {}) },
       disabled: selectedBlocked,
       onClick: () => { void applyProfiles([...new Set(picked.map((row) => row.profile))]) },
-    }, '更新所选' + (picked.length > 0 ? ' (' + picked.length + ')' : '')) : null,
+    }, picked.length > 0 ? t('action.updateSelectedCount', { count: picked.length }) : t('action.updateSelected')) : null,
     tab === TAB_UPDATES ? h('button', {
       style: { ...S.btn, ...(allBlocked ? S.btnOff : {}) },
       disabled: allBlocked,
       onClick: () => { void applyProfiles(profilesWithUpdates) },
-    }, '全部更新') : null,
+    }, t('action.updateAll')) : null,
     tab === TAB_UPDATES ? h('label', { style: { display: 'flex', gap: '4px', alignItems: 'center', ...S.dim } },
       h('input', { type: 'checkbox', checked: latest, onChange: (event: any) => setLatest(event.target.checked) }),
-      '忽略版本范围 (--latest)') : null,
+      t('action.latest')) : null,
     tab === TAB_INSTALLED ? h('button', {
       style: { ...S.btn, ...(busy ? S.btnOff : {}) },
       disabled: busy,
-      onClick: () => { void run(() => post('/rollback', {}), '已回滚到最近的快照') },
-    }, '回滚最近一次更新') : null,
+      onClick: () => { void run(() => post('/rollback', {}), t('message.rolledBack')) },
+    }, t('action.rollbackLast')) : null,
     tab === TAB_DISCOVER ? h('input', {
       style: S.input,
-      placeholder: '搜索插件（名称 / 描述 / 作者）',
+      placeholder: t('placeholder.search'),
       value: query,
       onChange: (event: any) => setQuery(event.target.value),
       onKeyDown: (event: any) => { if (event.key === 'Enter') void searchCatalog(query, category) },
@@ -340,48 +350,48 @@ export function PluginUpdatesPage () {
       style: S.input,
       value: category,
       onChange: (event: any) => { setCategory(event.target.value); void searchCatalog(query, event.target.value) },
-    }, h('option', { value: '' }, '全部分类'),
+    }, h('option', { value: '' }, t('select.allCategories')),
       ...((catalog && catalog.categories) || []).map((item) => h('option', { key: item.id, value: item.id }, item.zh || item.en))) : null,
     tab === TAB_DISCOVER ? h('button', {
       style: { ...S.btn, ...(catalogBusy ? S.btnOff : {}) },
       disabled: catalogBusy,
       onClick: () => { void searchCatalog(query, category) },
-    }, catalogBusy ? '查询中…' : '搜索') : null,
-    tab === TAB_DISCOVER ? null : h('button', { style: { ...S.btn, ...(allBlocked ? S.btnOff : {}) }, disabled: allBlocked, onClick: exportCsv }, '导出 CSV'),
+    }, catalogBusy ? t('action.searching') : t('action.search')) : null,
+    tab === TAB_DISCOVER ? null : h('button', { style: { ...S.btn, ...(allBlocked ? S.btnOff : {}) }, disabled: allBlocked, onClick: exportCsv }, t('action.exportCsv')),
   )
 
   return h('div', { style: S.page },
     h('div', { style: S.head },
       h('div', null,
-        h('h1', { style: S.h1 }, '插件更新'),
-        h('p', { style: S.sub }, '只升 pnpm「最小发布时长」策略放行的版本；应用前自动快照。'),
+        h('h1', { style: S.h1 }, t('page.title')),
+        h('p', { style: S.sub }, t('page.subtitle')),
       ),
       h('div', { style: S.headRight },
-        h('button', { style: S.btn, onClick: () => { try { location.reload() } catch {} }, title: '重新加载界面：新装的客户端插件会立刻生效。宿主插件不行，那要重启 DSH。' }, '刷新界面'),
+        h('button', { style: S.btn, onClick: () => { try { location.reload() } catch {} }, title: t('page.refreshUiHint') }, t('page.refreshUi')),
         h('button', {
           style: { ...S.btn, ...(restartSupported ? S.btnPrimary : S.btnOff) },
           disabled: !restartSupported,
           title: restartHint,
           onClick: () => { void restartHost() },
-        }, '重启 DSH'),
+        }, t('page.restartDsh')),
       ),
     ),
-    restart ? h('div', { style: S.banner }, '已应用更新 —— 需要重启 DSH 才生效（宿主插件重新加载，浏览器插件还要刷新页面）。') : null,
+    restart ? h('div', { style: S.banner }, t('banner.restartRequired')) : null,
     hostTooOld ? h('div', { style: S.banner },
-      '宿主插件还是旧版本：这个界面是新构建的，运行中的宿主进程还是上次启动时加载的代码（没有 /catalog 路由）。',
+      t('banner.hostOld1'),
       h('br'),
-      '「刷新界面」不够 —— 请完全退出 DSH（托盘图标 → 退出，不是关窗口）再重开。',
+      t('banner.hostOld2'),
     ) : null,
     error ? h('div', { style: S.err }, error) : null,
     message ? h('div', { style: S.note }, message) : null,
     h('div', { style: S.tabs },
       h('button', { style: { ...S.tab, ...(tab === TAB_UPDATES ? S.tabOn : {}) }, onClick: () => setTab(TAB_UPDATES) },
-        '可用更新' + (updates.length > 0 ? ' (' + updates.length + ')' : '')),
+        t('tab.updates') + (updates.length > 0 ? ' (' + updates.length + ')' : '')),
       h('button', { style: { ...S.tab, ...(tab === TAB_INSTALLED ? S.tabOn : {}) }, onClick: () => setTab(TAB_INSTALLED) },
-        '已安装' + (installed.length > 0 ? ' (' + installed.length + ')' : '')),
-      h('button', { style: { ...S.tab, ...(tab === TAB_DISCOVER ? S.tabOn : {}) }, onClick: () => setTab(TAB_DISCOVER) }, '发现'),
+        t('tab.installed') + (installed.length > 0 ? ' (' + installed.length + ')' : '')),
+      h('button', { style: { ...S.tab, ...(tab === TAB_DISCOVER ? S.tabOn : {}) }, onClick: () => setTab(TAB_DISCOVER) }, t('tab.discover')),
       h('button', { style: { ...S.tab, ...(tab === TAB_LOCKED ? S.tabOn : {}) }, onClick: () => setTab(TAB_LOCKED) },
-        '已锁定' + (locks.length > 0 ? ' (' + locks.length + ')' : '')),
+        t('tab.locked') + (locks.length > 0 ? ' (' + locks.length + ')' : '')),
     ),
     toolbar,
     tab === TAB_UPDATES
@@ -396,14 +406,13 @@ export function PluginUpdatesPage () {
             onRetry: () => { catalogTried.current = true; void searchCatalog(query, category) },
           })
           : h(LockedTable, { rows: lockedRows, locks, onUnlock: unlockOne }),
-    h('div', { style: S.note },
-      '更新与版本决策完全交给 dsh plugin（与手动执行逐字一致）；「发现」读的是插件市场的官方目录，安装同样不给它选版本。'),
+    h('div', { style: S.note }, t('footer.note')),
   )
 }
 
 function UpdateTable (props: any) {
   const { updates, installed, selected, setSelected } = props
-  if (updates.length === 0) return h('div', { style: S.note }, '没有可用更新 —— 解析器允许的版本都已装上。')
+  if (updates.length === 0) return h('div', { style: S.note }, t('empty.updates'))
   const allOn = updates.every((row: any) => selected[row.profile + '/' + row.name])
   const toggleAll = () => {
     const next: Record<string, boolean> = {}
@@ -413,11 +422,11 @@ function UpdateTable (props: any) {
   return h('table', { style: S.table },
     h('thead', null, h('tr', null,
       h('th', { style: { ...S.th, width: '28px' } }, h('input', { type: 'checkbox', checked: allOn, onChange: toggleAll })),
-      h('th', { style: S.th }, '插件'),
-      h('th', { style: S.th }, 'Profile'),
-      h('th', { style: S.th }, '当前版本'),
-      h('th', { style: S.th }, '新版本'),
-      h('th', { style: S.th }, '来源'),
+      h('th', { style: S.th }, t('col.plugin')),
+      h('th', { style: S.th }, t('col.profile')),
+      h('th', { style: S.th }, t('col.current')),
+      h('th', { style: S.th }, t('col.latest')),
+      h('th', { style: S.th }, t('col.source')),
       h('th', { style: S.th }, ''),
     )),
     h('tbody', null, updates.map((row: any) => {
@@ -436,9 +445,9 @@ function UpdateTable (props: any) {
         h('td', { style: { ...S.td, ...S.dim } }, match ? match.source : 'npm'),
         h('td', { style: S.td }, h('button', {
           style: S.btn,
-          title: '不再提示这个插件的更新',
+          title: t('action.lockHint'),
           onClick: () => props.onLock(row),
-        }, '锁定')),
+        }, t('action.lock'))),
       )
     })),
   )
@@ -446,37 +455,37 @@ function UpdateTable (props: any) {
 
 function DiscoverTable (props: any) {
   const { catalog, catalogBusy, catalogError, hostTooOld, elapsed, installedNames, onInstall } = props
-  if (hostTooOld) return h('div', { style: S.note }, '宿主插件没有目录路由 —— 退出 DSH 再重开，然后回到这里。')
+  if (hostTooOld) return h('div', { style: S.note }, t('discover.noHostRoute'))
   if (catalogError !== '') {
     return h('div', null,
       h('div', { style: S.err }, catalogError),
-      h('button', { style: S.btn, onClick: () => props.onRetry() }, '重试'),
+      h('button', { style: S.btn, onClick: () => props.onRetry() }, t('action.retry')),
     )
   }
   if (catalogBusy && catalog === null) {
-    return h('div', { style: S.note }, '正在读取插件目录…'
-      + (elapsed > 2 ? '（已 ' + elapsed + ' 秒；首次要下 5 MB，之后走本地缓存）' : '（首次约 5 MB，之后走本地缓存）'))
+    return h('div', { style: S.note }, t('discover.loading')
+      + (elapsed > 2 ? t('discover.loadingElapsed', { seconds: elapsed }) : t('discover.loadingFirst')))
   }
   if (catalog === null) {
     return h('div', null,
-      h('div', { style: S.note }, '还没有目录数据。'),
-      h('button', { style: S.btn, onClick: () => props.onRetry() }, '读取目录'),
+      h('div', { style: S.note }, t('discover.empty')),
+      h('button', { style: S.btn, onClick: () => props.onRetry() }, t('discover.read')),
     )
   }
-  if (catalog.ok !== true) return h('div', { style: S.err }, '目录不可用：' + (catalog.reason || catalog.error || '未知原因'))
+  if (catalog.ok !== true) return h('div', { style: S.err }, t('error.catalogUnavailable', { reason: catalog.reason || catalog.error || t('error.unknownReason') }))
   const rows: CatalogRow[] = catalog.rows || []
   return h('div', null,
     h('div', { style: { ...S.dim, marginBottom: '6px' } },
-      '共 ' + (catalog.total || 0) + ' 条匹配 · 目录更新于 ' + (catalog.updated || '未知')
-      + (catalog.stale ? '（离线缓存' + (catalog.error ? '：' + catalog.error : '') + '）' : '')),
+      t('discover.summary', { total: catalog.total || 0, updated: catalog.updated || t('discover.updatedUnknown') })
+      + (catalog.stale ? (catalog.error ? t('discover.stale', { reason: catalog.error }) : t('discover.staleBare')) : '')),
     rows.length === 0
-      ? h('div', { style: S.note }, '没有匹配的插件。换个关键词试试。')
+      ? h('div', { style: S.note }, t('discover.noMatch'))
       : h('table', { style: S.table },
         h('thead', null, h('tr', null,
-          h('th', { style: S.th }, '插件'),
-          h('th', { style: S.th }, '说明'),
-          h('th', { style: S.th }, '热度'),
-          h('th', { style: S.th }, '能力'),
+          h('th', { style: S.th }, t('col.plugin')),
+          h('th', { style: S.th }, t('col.description')),
+          h('th', { style: S.th }, t('col.popularity')),
+          h('th', { style: S.th }, t('col.capabilities')),
           h('th', { style: S.th }, ''),
         )),
         h('tbody', null, rows.map((entry) => {
@@ -495,8 +504,9 @@ function DiscoverTable (props: any) {
             ),
             h('td', { style: S.td },
               already
-                ? h('span', { style: S.dim }, '已安装')
-                : h('button', { style: { ...S.btn, ...S.btnPrimary }, onClick: () => { void onInstall(entry) } }, '安装')),
+                ? h('span', { style: S.dim }, t('discover.installed'))
+                : h('button', { style: { ...S.btn, ...S.btnPrimary }, onClick: () => { void onInstall(entry) } }, t('action.install')),
+            ),
           )
         })),
       ),
@@ -505,13 +515,13 @@ function DiscoverTable (props: any) {
 
 function LockedTable (props: any) {
   const { rows, locks, onUnlock } = props
-  if (locks.length === 0) return h('div', { style: S.note }, '没有被锁定的插件。在「可用更新」里点某一行的「锁定」，就不会再提示它的更新。')
+  if (locks.length === 0) return h('div', { style: S.note }, t('empty.locked'))
   return h('table', { style: S.table },
     h('thead', null, h('tr', null,
-      h('th', { style: S.th }, '插件'),
-      h('th', { style: S.th }, 'Profile'),
-      h('th', { style: S.th }, '锁定时版本'),
-      h('th', { style: S.th }, '当前可升到'),
+      h('th', { style: S.th }, t('col.plugin')),
+      h('th', { style: S.th }, t('col.profile')),
+      h('th', { style: S.th }, t('col.lockedAt')),
+      h('th', { style: S.th }, t('col.canUpdateTo')),
       h('th', { style: S.th }, ''),
     )),
     h('tbody', null, locks.map((lock: any) => {
@@ -520,8 +530,8 @@ function LockedTable (props: any) {
         h('td', { style: { ...S.td, ...S.mono } }, lock.name),
         h('td', { style: S.td }, lock.profile),
         h('td', { style: { ...S.td, ...S.mono } }, lock.version || '—'),
-        h('td', { style: { ...S.td, ...S.mono } }, row ? row.current + ' → ' + row.latest : '已是最新'),
-        h('td', { style: S.td }, h('button', { style: S.btn, onClick: () => { void onUnlock(lock) } }, '解锁')),
+        h('td', { style: { ...S.td, ...S.mono } }, row ? row.current + ' → ' + row.latest : t('col.alreadyLatest')),
+        h('td', { style: S.td }, h('button', { style: S.btn, onClick: () => { void onUnlock(lock) } }, t('action.unlock'))),
       )
     })),
   )
@@ -529,13 +539,13 @@ function LockedTable (props: any) {
 
 function InstalledTable (props: any) {
   const installed = props.installed
-  if (installed.length === 0) return h('div', { style: S.note }, '没有已安装的插件。')
+  if (installed.length === 0) return h('div', { style: S.note }, t('empty.installed'))
   return h('table', { style: S.table },
     h('thead', null, h('tr', null,
-      h('th', { style: S.th }, '插件'),
-      h('th', { style: S.th }, 'Profile'),
-      h('th', { style: S.th }, '记录的版本范围'),
-      h('th', { style: S.th }, '来源'),
+      h('th', { style: S.th }, t('col.plugin')),
+      h('th', { style: S.th }, t('col.profile')),
+      h('th', { style: S.th }, t('col.versionRange')),
+      h('th', { style: S.th }, t('col.source')),
     )),
     h('tbody', null, installed.map((row: any) => h('tr', { key: row.profile + '/' + row.name },
       h('td', { style: { ...S.td, ...S.mono } }, row.name),
@@ -562,15 +572,27 @@ export function PluginUpdatesIcon (props: any) {
 }
 
 /**
- * The browser half's load-bearing dependency. slots.inject fires only when the
+ * The browser half's load-bearing dependencies. slots.inject fires only when the
  * composition actually serves that seat, so a deployment without the layout shows
- * none of this instead of erroring.
+ * none of this instead of erroring; locale is required because the page renders
+ * its copy through it.
  */
-export const inject = ['slots']
+export const inject = ['slots', 'locale']
 
 const PANEL_ID = 'plugin-autoupdate'
 
 export function apply (ctx: any) {
+  attachLocale(ctx.locale)
+  // One namespace, two dictionaries - the shape the neighbouring plugins use.
+  // Wrapped because a locale seat that is present but refuses the call must not
+  // take the panel down with it: i18n falls back to the Chinese dictionary.
+  ctx.effect(() => {
+    try {
+      return ctx.locale.register(NS, { zh, en })
+    } catch {
+      return () => {}
+    }
+  }, 'dsh-plugin-autoupdate: dictionaries')
   ctx.effect(
     // A MAIN-COLUMN panel, the same seat the Plugins page and the task manager
     // occupy: 'main' is the keyed slot behind the main column, and
@@ -579,6 +601,7 @@ export function apply (ctx: any) {
     () => ctx.slots.inject('main', () => ctx.slots.register({
       name: 'main',
       key: PANEL_ID,
+      locale: NS,
     }, PluginUpdatesPage)),
     'dsh-plugin-autoupdate: main panel',
   )
@@ -588,9 +611,10 @@ export function apply (ctx: any) {
       id: PANEL_ID,
       order: 40,
       // The rail CALLS label() - first-party code passes a locale-bound function,
-      // so a plain string would throw. A literal is the smallest correct shape;
-      // locale binding is future work.
-      label: () => '插件更新',
+      // so a plain string would throw. It is called on every rail render, which is
+      // exactly when a language switch has to be picked up.
+      label: () => t('nav.title'),
+      locale: NS,
     }, PluginUpdatesIcon)),
     'dsh-plugin-autoupdate: sidebar entry',
   )

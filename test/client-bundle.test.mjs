@@ -29,6 +29,21 @@ const FAKE_REACT = {
   useRef: (value) => ({ current: value }),
 }
 
+/** Keys of one dictionary object literal, as the bundle ships it. */
+function dictionaryKeys (source, name) {
+  const start = source.indexOf('const ' + name + ' = {')
+  assert.notEqual(start, -1, 'the bundle must carry the ' + name + ' dictionary')
+  const body = source.slice(start, source.indexOf('};', start))
+  // Keys carry digits too (error.catalog404, banner.hostOld1); values never look
+  // like a dotted lowercase key followed by a colon.
+  return [...body.matchAll(/"([a-z][a-zA-Z0-9]*\.[a-zA-Z0-9.]+)":/g)].map((match) => match[1])
+}
+
+/** Keys the code actually asks for. Every call site passes a literal. */
+function requestedKeys (source) {
+  return [...source.matchAll(/translate\("([^"]+)"/g)].map((match) => match[1])
+}
+
 test('lib/client.js is a loader factory, not an ES module', () => {
   assert.ok(existsSync(BUNDLE), 'lib/client.js must be committed - git installs run no build')
   const { source } = loadBundle()
@@ -57,9 +72,20 @@ test('the factory resolves react through the injected require', () => {
     throw new Error('unexpected require: ' + specifier)
   })
   assert.deepEqual(asked, ['react'])
-  assert.deepEqual(mod.inject, ['slots'])
+  assert.deepEqual(mod.inject, ['slots', 'locale'])
   assert.equal(typeof mod.apply, 'function')
   assert.equal(typeof mod.PluginUpdatesPage, 'function')
+})
+
+test('en mirrors zh key for key, and the dictionaries cover every key the code uses', () => {
+  const { source } = loadBundle()
+  const zhKeys = dictionaryKeys(source, 'zh')
+  const enKeys = dictionaryKeys(source, 'en')
+  assert.ok(zhKeys.length > 40, 'the zh dictionary is the key-set source of truth and must not shrink')
+  assert.deepEqual([...enKeys].sort(), [...zhKeys].sort(), 'en must mirror zh key for key')
+  const used = [...new Set(requestedKeys(source))]
+  assert.deepEqual(used.filter((key) => !zhKeys.includes(key)), [], 'every translated key must exist in the dictionary')
+  assert.deepEqual(zhKeys.filter((key) => !used.includes(key)), [], 'no dictionary key may be dead')
 })
 
 test('the page fills its seat and diagnoses a host older than itself', () => {
@@ -70,6 +96,7 @@ test('the page fills its seat and diagnoses a host older than itself', () => {
   assert.equal(/maxWidth:\s*"1100px"/.test(source), false, 'the page must not cap its own width')
   assert.match(source, /overflow: "auto"/, 'the page owns the scrolling the seat does not provide')
   // A 404 from a host started before this bundle must not read as "no data yet".
+  assert.match(source, /translate\("error\.catalog404"\)/, 'the 404 branch must use the diagnosis copy')
   assert.match(source, /宿主没有 \/catalog 路由/)
   assert.match(source, /catalogTried\.current/, 'the catalog request must not retry in a loop')
 })
@@ -78,6 +105,8 @@ test('apply() registers the main-column panel and its rail entry', () => {
   const { registered } = loadBundle()
   const mod = registered[0].factory(() => FAKE_REACT)
   const calls = []
+  // No locale seat here on purpose: the page must still carry its copy through the
+  // zh fallback instead of rendering keys or throwing.
   const ctx = {
     effect: (fn, label) => { calls.push(['effect', label]); return fn() },
     slots: {
@@ -91,10 +120,40 @@ test('apply() registers the main-column panel and its rail entry', () => {
   const registers = calls.filter((call) => call[0] === 'register')
   const main = registers.find((call) => call[1].name === 'main')
   assert.equal(main[1].key, 'plugin-autoupdate', 'the key is the panel id the rail selects')
+  assert.equal(main[1].locale, 'plugin-autoupdate', 'the seat declares the namespace its copy comes from')
   assert.equal(main[2].name, 'PluginUpdatesPage')
   const rail = registers.find((call) => call[1].name === 'sidebar.panellist')
   assert.equal(rail[1].id, 'plugin-autoupdate')
   assert.equal(typeof rail[1].label, 'function', 'the rail CALLS label()')
-  assert.equal(rail[1].label(), '插件更新')
+  assert.equal(rail[1].label(), '插件更新', 'without a locale seat the zh dictionary is the fallback')
   assert.equal(rail[2].name, 'PluginUpdatesIcon')
+})
+
+test('apply() hands both dictionaries to the seat and the label follows it', () => {
+  const { registered } = loadBundle()
+  const mod = registered[0].factory(() => FAKE_REACT)
+  const dicts = []
+  const registers = []
+  const subscriptions = []
+  const ctx = {
+    effect: (fn) => fn(),
+    slots: {
+      inject: (name, cb) => cb(),
+      register: (options, component) => { registers.push([options, component]); return () => {} },
+    },
+    locale: {
+      register: (namespace, dictionary) => { dicts.push([namespace, dictionary]); return () => {} },
+      // A bound translator that names its namespace, so the assertions can see
+      // which one the rail entry reads through.
+      bind: (namespace) => (key) => namespace + ':' + key,
+      subscribe: (listener) => { subscriptions.push(listener); return () => {} },
+    },
+  }
+  mod.apply(ctx)
+  assert.equal(dicts.length, 1, 'one namespace, one registration')
+  assert.equal(dicts[0][0], 'plugin-autoupdate')
+  assert.ok(Object.keys(dicts[0][1].zh).length > 40)
+  assert.deepEqual(Object.keys(dicts[0][1].en).sort(), Object.keys(dicts[0][1].zh).sort())
+  const rail = registers.find((call) => call[0].name === 'sidebar.panellist')
+  assert.equal(rail[0].label(), 'plugin-autoupdate:nav.title', 'the label reads through the registered namespace')
 })
