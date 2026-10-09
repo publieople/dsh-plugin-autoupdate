@@ -47,7 +47,8 @@
   },
   "scripts": {
     "build": "tsdown",
-    "prepare": "tsdown",
+    "prepack": "tsdown",
+    "check:built": "tsdown && git diff --exit-code -- lib",
     "test": "node --test",
     "typecheck": "tsc --noEmit"
   },

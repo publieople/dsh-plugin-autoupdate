@@ -24,6 +24,11 @@ jobs:
       - name: Install
         run: npm install --no-audit --no-fund
 
+      # lib/client.js is committed (git installs run no build step - pnpm blocks
+      # `prepare` for git dependencies), so a stale bundle must fail here.
+      - name: Build and check the committed bundle is fresh
+        run: npm run check:built
+
       # The suite is offline: it only parses text and diffs manifests.
       - name: Test
         run: npm test
