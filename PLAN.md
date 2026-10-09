@@ -8,7 +8,7 @@
 |---|---|---|
 | M0 | 仓库与骨架（清单、cordis patch、CLI 契约、单测） | ✅ 已完成 |
 | M1 | host 侧真实组合验证（临时 profile 跑通 check/apply/rollback） | ✅ 已完成（25/25） |
-| M2 | 客户端设置页（UniGetUI 式三视图） | 🚧 进行中：host HTTP 层 ✅ |
+| M2 | 客户端页面（UniGetUI 式三视图） | 🚧 v0.2.0：主栏页面 + 侧栏入口 ✅，发现视图待做 |
 | M3 | 发布到 npm + 打 tag | ⬜ 待做 |
 | M4 | 提交进插件目录（别人能搜到） | ⬜ 待做 |
 
@@ -65,7 +65,16 @@
 验证：`npm test` **20/20**（含 Host 信任、405/403/400、confirm 门禁）+
 `node scripts/m1-http-check.mjs m1test` **14/14**（真实 socket、真实 handler、真实 CLI、真实 profile：status → 405 → 伪造 Host 403 → 缺 confirm 400 → apply 改变 manifest → rollback 字节级还原）。
 
-### 待做（commit 2/3）
+### 已完成：客户端页面（v0.2.0）
+
+- 座位从 `settings.section` 换成 **主栏页面**：`main`（keyed slot，key = 面板 id）+ `sidebar.panellist`（侧栏图标）。
+  用户反馈「设置页太小」，而 `main` 就是对话、插件页、任务管理器共用的那一栏。
+  第一方范例：`packages/client/ui-plugin-manager/src/client/index.ts:110`。
+- 构建形态见 AGENTS.md：client bundle 必须是 `window.__ModuleLoader__.load({id, factory})` 闭包工厂，不是 ESM
+  （2026-10-09 用 ESM 构建导致桌面版整个 web boot 挂掉）。
+- `test/client-bundle.test.mjs` 离线执行产物，断言工厂格式、`require('react')` 外置、两个 slot 注册与 `label()` 形态。
+
+### 待做（commit 3）
 
 - client：`src/client/*.tsx` + tsdown 构建 → `lib/client.js`；`exports['./client']`、`dsh.client.platform: 'web'`
 - 客户端依赖写在 **client bundle 导出的 `export const inject`** 里（`dsh.client.inject` 只是预检/HMR 用的信息性元数据）

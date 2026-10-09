@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-autoupdate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Supply-chain-aware plugin updater for DeepSeek Harness: checks the plugins installed in your profiles, applies only the versions pnpm's minimum-release-age policy allows, snapshots before every change and can roll back.",
   "type": "module",
   "main": "lib/index.js",

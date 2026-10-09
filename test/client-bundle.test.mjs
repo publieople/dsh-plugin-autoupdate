@@ -61,7 +61,7 @@ test('the factory resolves react through the injected require', () => {
   assert.equal(typeof mod.PluginUpdatesPage, 'function')
 })
 
-test('apply() registers the settings.section page', () => {
+test('apply() registers the main-column panel and its rail entry', () => {
   const { registered } = loadBundle()
   const mod = registered[0].factory(() => FAKE_REACT)
   const calls = []
@@ -73,12 +73,15 @@ test('apply() registers the settings.section page', () => {
     },
   }
   mod.apply(ctx)
-  assert.equal(calls[0][0], 'effect')
-  assert.deepEqual(calls[1], ['inject', 'settings.section'])
-  const [, options, component] = calls[2]
-  assert.equal(options.name, 'settings.section')
-  assert.equal(options.id, 'plugin-autoupdate')
-  assert.equal(typeof options.label, 'function', 'the shell CALLS label()')
-  assert.equal(options.label(), '插件更新')
-  assert.equal(component.name, 'PluginUpdatesPage')
+  const injected = calls.filter((call) => call[0] === 'inject').map((call) => call[1])
+  assert.deepEqual(injected, ['main', 'sidebar.panellist'])
+  const registers = calls.filter((call) => call[0] === 'register')
+  const main = registers.find((call) => call[1].name === 'main')
+  assert.equal(main[1].key, 'plugin-autoupdate', 'the key is the panel id the rail selects')
+  assert.equal(main[2].name, 'PluginUpdatesPage')
+  const rail = registers.find((call) => call[1].name === 'sidebar.panellist')
+  assert.equal(rail[1].id, 'plugin-autoupdate')
+  assert.equal(typeof rail[1].label, 'function', 'the rail CALLS label()')
+  assert.equal(rail[1].label(), '插件更新')
+  assert.equal(rail[2].name, 'PluginUpdatesIcon')
 })

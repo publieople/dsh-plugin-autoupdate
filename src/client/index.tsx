@@ -36,7 +36,8 @@ const post = (path: string, body: Record<string, unknown>) => send(path, {
 })
 
 const S = {
-  page: { padding: '6px 2px', fontSize: '13px', lineHeight: 1.55 },
+  page: { padding: '22px 26px', fontSize: '13px', lineHeight: 1.55, maxWidth: '1100px' },
+  h1: { fontSize: '19px', fontWeight: 650, margin: '0 0 4px' },
   title: { fontSize: '15px', fontWeight: 600, margin: '0 0 2px' },
   sub: { opacity: 0.6, margin: '0 0 12px' },
   tabs: { display: 'flex', gap: '4px', marginBottom: '10px', borderBottom: '1px solid rgba(128,128,128,.25)' },
@@ -155,7 +156,7 @@ export function PluginUpdatesPage () {
   )
 
   return h('div', { style: S.page },
-    h('h2', { style: S.title }, '插件更新'),
+    h('h1', { style: S.h1 }, '插件更新'),
     h('p', { style: S.sub }, '只升 pnpm「最小发布时长」策略放行的版本；应用前自动快照；本页不会替你重启 DSH。'),
     restart ? h('div', { style: S.banner }, '已应用更新 —— 需要重启 DSH 才生效（宿主插件重新加载，浏览器插件还要刷新页面）。') : null,
     error ? h('div', { style: S.err }, error) : null,
@@ -231,24 +232,52 @@ function InstalledTable (props: any) {
   )
 }
 
+/** The rail icon. Hand-drawn so this bundle needs no icon package: the sidebar
+ * passes only { size }, and currentColor inherits the rail's state colour. */
+export function PluginUpdatesIcon (props: any) {
+  const size = props && props.size ? props.size : 16
+  return h('svg', {
+    width: size, height: size, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round',
+  },
+    h('path', { d: 'M20 12a8 8 0 1 1-2.34-5.66' }),
+    h('path', { d: 'M20 4v4h-4' }),
+    h('path', { d: 'M12 8.5v7' }),
+    h('path', { d: 'M8.5 12.5 12 16l3.5-3.5' }),
+  )
+}
+
 /**
  * The browser half's load-bearing dependency. slots.inject fires only when the
- * composition actually serves the settings section, so a deployment without the
- * settings shell shows none of this instead of erroring.
+ * composition actually serves that seat, so a deployment without the layout shows
+ * none of this instead of erroring.
  */
 export const inject = ['slots']
 
+const PANEL_ID = 'plugin-autoupdate'
+
 export function apply (ctx: any) {
   ctx.effect(
-    () => ctx.slots.inject('settings.section', () => ctx.slots.register({
-      name: 'settings.section',
-      id: 'plugin-autoupdate',
-      order: 60,
-      // The shell CALLS label() - first-party code passes a locale-bound
-      // function (ui-agent-preset), so a plain string would throw. Returning a
-      // literal is the smallest correct shape; locale binding is future work.
-      label: () => '插件更新',
+    // A MAIN-COLUMN panel, the same seat the Plugins page and the task manager
+    // occupy: 'main' is the keyed slot behind the main column, and
+    // 'sidebar.panellist' is the rail entry that selects it. The settings
+    // section was too cramped for tables (user, 2026-10-09).
+    () => ctx.slots.inject('main', () => ctx.slots.register({
+      name: 'main',
+      key: PANEL_ID,
     }, PluginUpdatesPage)),
-    'dsh-plugin-autoupdate: settings page',
+    'dsh-plugin-autoupdate: main panel',
+  )
+  ctx.effect(
+    () => ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+      name: 'sidebar.panellist',
+      id: PANEL_ID,
+      order: 40,
+      // The rail CALLS label() - first-party code passes a locale-bound function,
+      // so a plain string would throw. A literal is the smallest correct shape;
+      // locale binding is future work.
+      label: () => '插件更新',
+    }, PluginUpdatesIcon)),
+    'dsh-plugin-autoupdate: sidebar entry',
   )
 }
