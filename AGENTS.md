@@ -10,8 +10,8 @@
    本插件不去查 registry 挑版本——那会让插件的判断和 `pnpm outdated` 不一致。
 3. **写入前必须快照。** `applyUpdate` 先 `snapshotProfile`，保留最近 5 份；`rollback` 是一等公民。
 4. **重启只能由用户点按钮触发，且只在宿主支持的部署里执行。** 给 agent 的工具永不重启宿主，只报告 `restartRequired`。
-   页面上的「重启 DSH」走能力门禁：官方桌面版由外壳管理进程生命周期（`desktopProfiles` 在场即判为不支持，
-   返回 409 并说明原因）；CLI / 服务部署才执行 —— 有 supervisor（systemd/pm2/launchd）就直接退出交给它，
+   页面上的「重启 DSH」走能力门禁：官方桌面版由外壳管理进程生命周期（判据是 `process.versions.electron`，
+   不是服务查找 —— 见下面第三条实测；返回 409 并说明原因）；CLI / 服务部署才执行 —— 有 supervisor（systemd/pm2/launchd）就直接退出交给它，
    没有才 detached 拉起自己并等端口释放。**绝不 `app.relaunch` Electron。**
 5. **只写 profile 目录**（`$DSH_HOME/profiles/<name>`），不碰用户代码、不碰 agent 配置。
 6. **Windows 上自己拼命令行再交给 cmd.exe。** Node 的 `shell: true` 不转义参数（DEP0190），
