@@ -19,7 +19,8 @@ const Q = String.fromCharCode(34)
 type Row = { name: string; current: string; latest: string }
 type InstalledRow = { name: string; spec: string; source: string }
 type Report = { profile: string; rows?: Row[]; installed?: InstalledRow[] }
-type Status = { ok: boolean; profiles?: string[]; reports?: Report[]; reason?: string }
+type Restart = { supported: boolean; reason?: string; supervisor?: string }
+type Status = { ok: boolean; profiles?: string[]; reports?: Report[]; restart?: Restart; reason?: string }
 type ActionResult = { ok: boolean; restartRequired?: boolean; reason?: string }
 
 async function send (path: string, init?: RequestInit): Promise<{ status: number; json: any }> {
@@ -37,6 +38,8 @@ const post = (path: string, body: Record<string, unknown>) => send(path, {
 
 const S = {
   page: { padding: '22px 26px', fontSize: '13px', lineHeight: 1.55, maxWidth: '1100px' },
+  head: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' },
+  headRight: { display: 'flex', gap: '8px', flexShrink: 0, paddingTop: '8px' },
   h1: { fontSize: '19px', fontWeight: 650, margin: '0 0 4px' },
   title: { fontSize: '15px', fontWeight: 600, margin: '0 0 2px' },
   sub: { opacity: 0.6, margin: '0 0 12px' },
@@ -129,6 +132,35 @@ export function PluginUpdatesPage () {
     download('dsh-plugin-updates.csv', toCsv(rows))
   }
 
+  // Restart is a capability, not an assumption: the official Desktop shell owns its
+  // own process lifecycle, so the host reports unsupported there and the button says
+  // who does own it rather than relaunching Electron behind the launcher's back.
+  const restartInfo = (status && status.restart) || null
+  const restartSupported = Boolean(restartInfo && restartInfo.supported)
+  const restartHint = restartSupported
+    ? '重启 DSH，让新装的宿主插件生效（界面会断开几秒）'
+    : ((restartInfo && restartInfo.reason) || '当前宿主不支持自重启')
+
+  const restartHost = async () => {
+    if (!restartSupported) return
+    const proceed = typeof window !== 'undefined' && typeof window.confirm === 'function'
+      ? window.confirm('重启 DSH？当前界面会断开，几秒后自动恢复。')
+      : true
+    if (!proceed) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const { status: code, json } = await post('/restart', { confirm: true })
+      if (json && json.ok) {
+        setMessage(json.mode === 'supervisor'
+          ? '正在重启：已交给进程管理器接管。'
+          : '正在重启：已安排自重启，界面断开几秒后会自己回来。')
+      } else setError('重启失败：' + ((json && json.reason) || ('HTTP ' + code)))
+    } catch (err) {
+      setError('重启失败：' + String((err && (err as Error).message) || err))
+    }
+    setBusy(false)
+  }
+
   const selectedBlocked = busy || picked.length === 0
   const allBlocked = busy || updates.length === 0
 
@@ -156,8 +188,21 @@ export function PluginUpdatesPage () {
   )
 
   return h('div', { style: S.page },
-    h('h1', { style: S.h1 }, '插件更新'),
-    h('p', { style: S.sub }, '只升 pnpm「最小发布时长」策略放行的版本；应用前自动快照；本页不会替你重启 DSH。'),
+    h('div', { style: S.head },
+      h('div', null,
+        h('h1', { style: S.h1 }, '插件更新'),
+        h('p', { style: S.sub }, '只升 pnpm「最小发布时长」策略放行的版本；应用前自动快照。'),
+      ),
+      h('div', { style: S.headRight },
+        h('button', { style: S.btn, onClick: () => { try { location.reload() } catch {} }, title: '重新加载界面：新装的客户端插件会立刻生效' }, '刷新界面'),
+        h('button', {
+          style: { ...S.btn, ...(restartSupported ? S.btnPrimary : S.btnOff) },
+          disabled: !restartSupported,
+          title: restartHint,
+          onClick: () => { void restartHost() },
+        }, '重启 DSH'),
+      ),
+    ),
     restart ? h('div', { style: S.banner }, '已应用更新 —— 需要重启 DSH 才生效（宿主插件重新加载，浏览器插件还要刷新页面）。') : null,
     error ? h('div', { style: S.err }, error) : null,
     message ? h('div', { style: S.note }, message) : null,

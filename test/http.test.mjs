@@ -117,6 +117,50 @@ test('rollback aggregates ok across profiles', async () => {
   assert.equal(res.json().ok, true)
 })
 
+test('restart refuses a forged Host and a missing confirm', async () => {
+  const handlers = createRouteHandlers({ ...CLI, desktop: true })
+  const forged = fakeRes()
+  await handlers.restart(fakeReq({ method: 'POST', host: 'evil.example', body: '{"confirm":true}' }), forged)
+  assert.equal(forged.statusCode, 403)
+  const unconfirmed = fakeRes()
+  await handlers.restart(fakeReq({ method: 'POST', body: '{}' }), unconfirmed)
+  assert.equal(unconfirmed.statusCode, 400)
+})
+
+test('restart is refused with a reason where the shell owns the lifecycle', async () => {
+  let called = false
+  const handlers = createRouteHandlers({ ...CLI, desktop: true, scheduleRestart: () => { called = true; return { mode: 'supervisor' } } })
+  const res = fakeRes()
+  await handlers.restart(fakeReq({ method: 'POST', body: '{"confirm":true}' }), res)
+  assert.equal(res.statusCode, 409)
+  assert.match(res.json().reason, /Desktop|tray/i)
+  assert.equal(called, false)
+})
+
+test('restart schedules on a host that supports it, and reports the mode', async () => {
+  const seen = []
+  const handlers = createRouteHandlers({
+    ...CLI,
+    desktop: false,
+    port: 65535,
+    scheduleRestart: (options) => { seen.push(options); return { mode: 'helper', helper: '/tmp/x.mjs', exit: () => {} } },
+  })
+  const res = fakeRes()
+  await handlers.restart(fakeReq({ method: 'POST', body: '{"confirm":true}' }), res)
+  assert.equal(res.statusCode, 200)
+  assert.equal(res.json().ok, true)
+  assert.equal(res.json().mode, 'helper')
+  assert.equal(seen.length, 1)
+  assert.equal(seen[0].port, 65535)
+})
+
+test('status advertises the restart capability', async () => {
+  const handlers = createRouteHandlers({ ...CLI, desktop: true, check: async (profile) => ({ profile, rows: [] }) })
+  const res = fakeRes()
+  await handlers.status(fakeReq({}), res)
+  assert.equal(res.json().restart.supported, false)
+})
+
 test('sendJson writes a no-store JSON response', () => {
   const res = fakeRes()
   sendJson(res, 201, { ok: true })

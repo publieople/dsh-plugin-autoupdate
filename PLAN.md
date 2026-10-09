@@ -79,6 +79,8 @@
 - client：`src/client/*.tsx` + tsdown 构建 → `lib/client.js`；`exports['./client']`、`dsh.client.platform: 'web'`
 - 客户端依赖写在 **client bundle 导出的 `export const inject`** 里（`dsh.client.inject` 只是预检/HMR 用的信息性元数据）
 - 页面：已安装 / 可用更新两个视图先做（含勾选、批量应用、导出 CSV、快照列表）；「发现」后做
+- 右上角两个按钮：**刷新界面**（`location.reload()`，让新装的客户端插件立刻生效）与**重启 DSH**
+  （能力门禁：桌面版报 409 + 原因，CLI/服务部署自重启；见 AGENTS.md 第 4 条）
 - jsdom 挂载测试用官方 `@deepseek-ai/dsh-client-test-runtime`
 
 ## M3 —— 发布
