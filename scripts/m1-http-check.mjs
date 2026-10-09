@@ -8,7 +8,7 @@
  * Usage: DSH_CLI=<dsh.cmd> node scripts/m1-http-check.mjs [profile]
  */
 import { createServer, request as httpRequest } from 'node:http'
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { registerRoutes, ROUTE_BASE } from '../lib/http.js'
 import { findDshCli } from '../lib/dsh-cli.js'
@@ -18,6 +18,14 @@ import { runCli } from '../lib/outdated.js'
 const profileName = process.argv[2] || 'm1test'
 process.env.DSH_PROFILE = profileName
 const cli = process.env.DSH_CLI || findDshCli()
+// Under plain node, findDshCli() cannot see the desktop app's bundled CLI (it
+// derives it from process.execPath), so it falls back to a bare "dsh.cmd" that
+// does not exist - and then six checks fail for a reason that has nothing to do
+// with this plugin. Refuse to run instead of reporting those as failures.
+if (!existsSync(cli)) {
+  console.error('dsh CLI not found: ' + cli + '\nSet DSH_CLI, e.g. DSH_CLI="D:\\DSH\\resources\\runtime\\cli\\bin\\dsh.cmd"')
+  process.exit(2)
+}
 const home = dshHome()
 const profileDir = path.join(home, 'profiles', profileName)
 const manifest = () => readFileSync(path.join(profileDir, 'package.json'), 'utf8')

@@ -26,6 +26,7 @@ const FAKE_REACT = {
   useEffect: () => {},
   useMemo: (fn) => fn(),
   useState: (value) => [value, () => {}],
+  useRef: (value) => ({ current: value }),
 }
 
 test('lib/client.js is a loader factory, not an ES module', () => {
@@ -59,6 +60,18 @@ test('the factory resolves react through the injected require', () => {
   assert.deepEqual(mod.inject, ['slots'])
   assert.equal(typeof mod.apply, 'function')
   assert.equal(typeof mod.PluginUpdatesPage, 'function')
+})
+
+test('the page fills its seat and diagnoses a host older than itself', () => {
+  const { source } = loadBundle()
+  // The seat is AppFrame's centerCol: a column flex box with overflow:hidden. A
+  // fixed page max-width left the whole page hugging the left edge on a wide
+  // window and nothing scrolled, because the parent clips (user, 2026-10-09).
+  assert.equal(/maxWidth:\s*"1100px"/.test(source), false, 'the page must not cap its own width')
+  assert.match(source, /overflow: "auto"/, 'the page owns the scrolling the seat does not provide')
+  // A 404 from a host started before this bundle must not read as "no data yet".
+  assert.match(source, /宿主没有 \/catalog 路由/)
+  assert.match(source, /catalogTried\.current/, 'the catalog request must not retry in a loop')
 })
 
 test('apply() registers the main-column panel and its rail entry', () => {

@@ -68,6 +68,20 @@ test('GET status reports what the checker returned', async () => {
   assert.equal(payload.reports[0].rows[0].latest, '1.1.0')
 })
 
+test('status advertises the routes it registered, so a stale host is detectable', async () => {
+  const handlers = createRouteHandlers(CLI)
+  const res = fakeRes()
+  await handlers.status(fakeReq({}), res)
+  const payload = res.json()
+  // The browser bundle is re-read from disk on every page load, the host half is
+  // only loaded at process start - so a page refresh can show tabs whose routes
+  // the running host does not have (that is how 发现 404ed on 2026-10-09). The
+  // page compares this list instead of rendering an empty catalog.
+  assert.deepEqual(payload.features, ['status', 'apply', 'rollback', 'restart', 'catalog', 'install', 'lock', 'unlock'])
+  assert.equal(typeof payload.version, 'string')
+  assert.match(payload.version, /^\d+\.\d+\.\d+/)
+})
+
 test('status refuses other methods with 405 and an Allow header', async () => {
   const handlers = createRouteHandlers(CLI)
   const res = fakeRes()

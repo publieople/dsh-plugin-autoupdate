@@ -22,12 +22,20 @@
 7. **Windows 上自己拼命令行再交给 cmd.exe。** Node 的 `shell: true` 不转义参数（DEP0190），
    cmd 会吃掉 `^`。走 `buildWindowsCommand()` + `quoteForCmd()`，别直接 `spawn(cmd, args, { shell: true })`。
 
-## 三条实测行为（别再踩）
+## 实测行为（别再踩）
 
 - **判定「是不是官方桌面版」只能看 `process.versions.electron`（且没有 `ELECTRON_RUN_AS_NODE`）。**
   2026-10-09 我用 `ctx.get('desktopProfiles')` 判，在这台机器的运行中宿主里判成了「非桌面」，
   页面上的「重启 DSH」被点亮 —— 点下去就是 `process.exit(0)` 掉 Electron 主进程。
   `scheduleRestart()` 里已经加了硬闸（Electron 进程一律拒绝），但门禁本身也别再用服务查找。
+- **「刷新界面」只换客户端半边，宿主半边只有重启进程才会重载。** 2026-10-09 15:0x 真实发生：
+  新客户端 bundle（4 个 tab）随页面刷新立刻生效，而运行中的宿主进程还是 14:44 启动时加载的旧代码 ——
+  「发现」页发出 `GET /plugin-autoupdate/catalog`，宿主答 404，页面把非 JSON 的 404 当成了「还没有目录数据」，
+  并按 `catalog === null` 反复重试，用户看到的就是「等了十几秒没动静」。
+  现在两头都有判据：`/status` 返回 `features`（`ROUTE_FEATURES`）与 `version`，页面比对出缺失就直说
+  「宿主插件还是旧版本，退出 DSH 再重开」；`send()` 保留 HTTP 状态码与响应体；目录请求只自动发一次。
+  **改宿主代码后必须让用户完全退出并重开 DSH，不能只说「刷新」。**
+
 - **别在用户可能刷新的时刻给运行中的桌面版 remove+add 插件。** 客户端 bundle 会短暂消失，
   此时「刷新界面」会让 web boot 挂掉（2026-10-09 14:31 真实发生：dsh-plugin-autoupdate 与 dshmarket 双双加载失败）。
   装完等几秒，或先告知用户别刷新。
@@ -81,3 +89,13 @@ DSH_CLI=<dsh.cmd 路径> node scripts/m1-live-check.mjs <临时 profile 名>
 
 它覆盖：工具契约、check、apply（含快照字节比对）、rollback、精确钉住路径、失败路径。
 在真实 profile 上只允许跑只读的 `action=check`。
+
+HTTP 那一半（状态、信任围栏、发现目录、锁定、安装）：
+
+```sh
+DSH_CLI=<dsh.cmd 路径> node scripts/m1-http-check.mjs <临时 profile 名>
+```
+
+**必须显式给 `DSH_CLI`**：普通 node 进程里 `findDshCli()` 看不到桌面版自带的 CLI（它按
+`process.execPath` 推路径），会退化成 PATH 上的 `dsh.cmd`；脚本现在会先检查该文件存在，不存在就直接退出，
+免得把环境问题报成 6 个失败。本机路径：`D:\DSH\resources\runtime\cli\bin\dsh.cmd`。

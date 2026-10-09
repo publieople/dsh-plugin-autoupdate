@@ -9,7 +9,7 @@
  * Styles are inline on purpose: no CSS pipeline in the build, and the page stays
  * readable in any theme.
  */
-import { createElement as h, useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement as h, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const ROUTE = '/plugin-autoupdate'
 const TAB_UPDATES = 'updates'
@@ -32,13 +32,21 @@ type CatalogResult = {
   updated?: string | null; stale?: boolean; error?: string | null; reason?: string
 }
 type Restart = { supported: boolean; reason?: string; supervisor?: string }
-type Status = { ok: boolean; profiles?: string[]; reports?: Report[]; restart?: Restart; reason?: string }
+type Status = { ok: boolean; profiles?: string[]; reports?: Report[]; restart?: Restart; reason?: string; features?: string[]; version?: string | null }
 type ActionResult = { ok: boolean; restartRequired?: boolean; reason?: string }
 
-async function send (path: string, init?: RequestInit): Promise<{ status: number; json: any }> {
+/**
+ * Every route answers JSON - but only when the host actually has that route. A
+ * host that predates this bundle answers 404 with a plain body, and `.json()` on
+ * that is null, which used to look exactly like "no data yet" and hid the reason.
+ * Keep the status code and a snippet of the body so the page can say what happened.
+ */
+async function send (path: string, init?: RequestInit): Promise<{ status: number; json: any; text: string }> {
   const response = await fetch(ROUTE + path, init)
-  const json = await response.json().catch(() => null)
-  return { status: response.status, json }
+  const text = await response.text()
+  let json: any = null
+  if (text !== '') { try { json = JSON.parse(text) } catch { json = null } }
+  return { status: response.status, json, text }
 }
 
 const getStatus = () => send('/status')
@@ -49,8 +57,33 @@ const post = (path: string, body: Record<string, unknown>) => send(path, {
 })
 
 const S = {
-  page: { padding: '22px 26px', fontSize: '13px', lineHeight: 1.55, maxWidth: '1100px' },
-  head: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' },
+  /**
+   * The seat is AppFrame's centerCol: a column flex box with overflow:hidden. So
+   * the page must own its own scrolling and fill BOTH axes - the maxWidth:1100px
+   * this used to carry is what made the whole page hug the left edge on a wide
+   * window, and nothing scrolled because the parent clips (user, 2026-10-09).
+   */
+  page: {
+    boxSizing: 'border-box' as const,
+    width: '100%',
+    height: '100%',
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    overflow: 'auto',
+    padding: '0 clamp(20px, 3vw, 40px) 40px',
+    fontSize: '13px',
+    lineHeight: 1.55,
+    color: 'var(--dsw-alias-label-primary, inherit)',
+  },
+  head: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '16px',
+    // The desktop shell draws a draggable title strip over the top of the frame.
+    paddingTop: 'calc(24px + var(--dsh-frame-top-clearance, 0px))',
+  },
   headRight: { display: 'flex', gap: '8px', flexShrink: 0, paddingTop: '8px' },
   h1: { fontSize: '19px', fontWeight: 650, margin: '0 0 4px' },
   title: { fontSize: '15px', fontWeight: 600, margin: '0 0 2px' },
@@ -63,7 +96,19 @@ const S = {
   btnPrimary: { borderColor: 'rgba(80,140,255,.6)', background: 'rgba(80,140,255,.15)' },
   btnOff: { opacity: 0.45, cursor: 'not-allowed' },
   table: { width: '100%', borderCollapse: 'collapse' as const },
-  th: { textAlign: 'left' as const, padding: '5px 8px', opacity: 0.55, fontWeight: 500, borderBottom: '1px solid rgba(128,128,128,.25)', fontSize: '12px' },
+  th: {
+    textAlign: 'left' as const,
+    padding: '6px 8px',
+    // A sticky header needs an opaque background, so dim the text, not the cell.
+    color: 'var(--dsw-alias-label-caption, rgba(128,128,128,.9))',
+    fontWeight: 500,
+    borderBottom: '1px solid var(--dsw-alias-border-l3, rgba(128,128,128,.25))',
+    fontSize: '12px',
+    position: 'sticky' as const,
+    top: 0,
+    background: 'var(--dsw-alias-bg-base, Canvas)',
+    zIndex: 2,
+  },
   td: { padding: '5px 8px', borderBottom: '1px solid rgba(128,128,128,.12)' },
   mono: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' },
   note: { marginTop: '12px', padding: '8px 10px', borderRadius: '6px', background: 'rgba(128,128,128,.08)', opacity: 0.85, fontSize: '12px' },
@@ -104,6 +149,10 @@ export function PluginUpdatesPage () {
   const [category, setCategory] = useState('')
   const [catalog, setCatalog] = useState<CatalogResult | null>(null)
   const [catalogBusy, setCatalogBusy] = useState(false)
+  const [catalogError, setCatalogError] = useState('')
+  const [catalogStartedAt, setCatalogStartedAt] = useState(0)
+  const [, setTick] = useState(0)
+  const catalogTried = useRef(false)
 
   const refresh = useCallback(async (quiet?: boolean) => {
     if (!quiet) setBusy(true)
@@ -127,6 +176,14 @@ export function PluginUpdatesPage () {
   const locks = useMemo(() => reports.flatMap((report) => (report.locks || []).map((lock) => ({ ...lock, profile: report.profile }))), [reports])
   const installedNames = useMemo(() => new Set(installed.map((row) => row.name)), [installed])
   const allProfiles = [...new Set(reports.map((report) => report.profile))]
+
+  // The browser half is re-read from disk on every page load; the host half is only
+  // loaded when the process starts. So a page refresh can show this bundle's tabs
+  // while the running host still lacks their routes - exactly what happened on
+  // 2026-10-09 15:0x: the 发现 tab existed and /catalog answered 404. Say so, in
+  // those words, instead of reporting an empty catalog.
+  const hostFeatures = (status && status.features) || []
+  const hostTooOld = Boolean(status && status.ok) && !hostFeatures.includes('catalog')
 
   const run = async (fn: () => Promise<{ status: number; json: ActionResult | null }>, okText: string) => {
     setBusy(true); setError(''); setMessage('')
@@ -159,22 +216,36 @@ export function PluginUpdatesPage () {
   // the browser never downloads it and never talks to the catalog itself).
   const searchCatalog = useCallback(async (text: string, nextCategory: string) => {
     setCatalogBusy(true)
+    setCatalogError('')
+    setCatalogStartedAt(Date.now())
     try {
       const params = new URLSearchParams()
       if (text.trim() !== '') params.set('q', text.trim())
       if (nextCategory !== '') params.set('category', nextCategory)
       params.set('limit', '60')
-      const { json } = await send('/catalog?' + params.toString())
-      setCatalog(json)
+      const { status: code, json, text: body } = await send('/catalog?' + params.toString())
+      if (json && json.ok === true) setCatalog(json)
+      else {
+        setCatalog(null)
+        const reason = json && json.reason ? String(json.reason) : ''
+        setCatalogError(code === 404
+          ? '宿主没有 /catalog 路由（HTTP 404）—— 运行中的宿主插件还是旧版本。界面能刷新，宿主插件不能：完全退出 DSH（托盘图标 → 退出）再重开。'
+          : 'HTTP ' + code + (reason !== '' ? '：' + reason : (body !== '' ? '：' + body.slice(0, 200) : '')))
+      }
     } catch (err) {
-      setCatalog({ ok: false, reason: String((err && (err as Error).message) || err) })
+      setCatalog(null)
+      setCatalogError('读取目录失败：' + String((err && (err as Error).message) || err))
     }
     setCatalogBusy(false)
   }, [])
 
+  // Load the first visit only - never re-fire on failure. The old shape keyed on
+  // `catalog === null`, so a 404 (old host) retried in a tight loop forever.
   useEffect(() => {
-    if (tab === TAB_DISCOVER && catalog === null && !catalogBusy) void searchCatalog('', '')
-  }, [tab, catalog, catalogBusy, searchCatalog])
+    if (tab !== TAB_DISCOVER || catalogTried.current || catalogBusy || hostTooOld) return
+    catalogTried.current = true
+    void searchCatalog(query, category)
+  }, [tab, catalogBusy, hostTooOld, query, category, searchCatalog])
 
   const lockOne = (row: any) => run(
     () => post('/lock', { name: row.name, version: row.latest, profiles: row.profile }),
@@ -196,6 +267,15 @@ export function PluginUpdatesPage () {
     await run(() => post('/install', { confirm: true, spec, profiles: allProfiles.join(',') }), '已安装 ' + spec + '（需要重启 DSH 生效）')
     await refresh(true)
   }
+
+  // A 5 MB first fetch is not instant. Count the seconds out loud rather than show
+  // a static line that reads like a hang (user, 2026-10-09).
+  useEffect(() => {
+    if (!catalogBusy) return
+    const timer = setInterval(() => setTick((value) => value + 1), 1000)
+    return () => clearInterval(timer)
+  }, [catalogBusy])
+  const catalogElapsed = catalogBusy && catalogStartedAt > 0 ? Math.round((Date.now() - catalogStartedAt) / 1000) : 0
 
   // Restart is a capability, not an assumption: the official Desktop shell owns its
   // own process lifecycle, so the host reports unsupported there and the button says
@@ -277,7 +357,7 @@ export function PluginUpdatesPage () {
         h('p', { style: S.sub }, '只升 pnpm「最小发布时长」策略放行的版本；应用前自动快照。'),
       ),
       h('div', { style: S.headRight },
-        h('button', { style: S.btn, onClick: () => { try { location.reload() } catch {} }, title: '重新加载界面：新装的客户端插件会立刻生效' }, '刷新界面'),
+        h('button', { style: S.btn, onClick: () => { try { location.reload() } catch {} }, title: '重新加载界面：新装的客户端插件会立刻生效。宿主插件不行，那要重启 DSH。' }, '刷新界面'),
         h('button', {
           style: { ...S.btn, ...(restartSupported ? S.btnPrimary : S.btnOff) },
           disabled: !restartSupported,
@@ -287,6 +367,11 @@ export function PluginUpdatesPage () {
       ),
     ),
     restart ? h('div', { style: S.banner }, '已应用更新 —— 需要重启 DSH 才生效（宿主插件重新加载，浏览器插件还要刷新页面）。') : null,
+    hostTooOld ? h('div', { style: S.banner },
+      '宿主插件还是旧版本：这个界面是新构建的，运行中的宿主进程还是上次启动时加载的代码（没有 /catalog 路由）。',
+      h('br'),
+      '「刷新界面」不够 —— 请完全退出 DSH（托盘图标 → 退出，不是关窗口）再重开。',
+    ) : null,
     error ? h('div', { style: S.err }, error) : null,
     message ? h('div', { style: S.note }, message) : null,
     h('div', { style: S.tabs },
@@ -304,7 +389,12 @@ export function PluginUpdatesPage () {
       : tab === TAB_INSTALLED
         ? h(InstalledTable, { installed })
         : tab === TAB_DISCOVER
-          ? h(DiscoverTable, { catalog, catalogBusy, installedNames, onInstall: installOne })
+          ? h(DiscoverTable, {
+            catalog, catalogBusy, catalogError, hostTooOld, elapsed: catalogElapsed,
+            installedNames,
+            onInstall: installOne,
+            onRetry: () => { catalogTried.current = true; void searchCatalog(query, category) },
+          })
           : h(LockedTable, { rows: lockedRows, locks, onUnlock: unlockOne }),
     h('div', { style: S.note },
       '更新与版本决策完全交给 dsh plugin（与手动执行逐字一致）；「发现」读的是插件市场的官方目录，安装同样不给它选版本。'),
@@ -355,9 +445,24 @@ function UpdateTable (props: any) {
 }
 
 function DiscoverTable (props: any) {
-  const { catalog, catalogBusy, installedNames, onInstall } = props
-  if (catalogBusy && catalog === null) return h('div', { style: S.note }, '正在读取插件目录…（首次约 5 MB，之后走本地缓存）')
-  if (catalog === null) return h('div', { style: S.note }, '还没有目录数据，点「搜索」试一次。')
+  const { catalog, catalogBusy, catalogError, hostTooOld, elapsed, installedNames, onInstall } = props
+  if (hostTooOld) return h('div', { style: S.note }, '宿主插件没有目录路由 —— 退出 DSH 再重开，然后回到这里。')
+  if (catalogError !== '') {
+    return h('div', null,
+      h('div', { style: S.err }, catalogError),
+      h('button', { style: S.btn, onClick: () => props.onRetry() }, '重试'),
+    )
+  }
+  if (catalogBusy && catalog === null) {
+    return h('div', { style: S.note }, '正在读取插件目录…'
+      + (elapsed > 2 ? '（已 ' + elapsed + ' 秒；首次要下 5 MB，之后走本地缓存）' : '（首次约 5 MB，之后走本地缓存）'))
+  }
+  if (catalog === null) {
+    return h('div', null,
+      h('div', { style: S.note }, '还没有目录数据。'),
+      h('button', { style: S.btn, onClick: () => props.onRetry() }, '读取目录'),
+    )
+  }
   if (catalog.ok !== true) return h('div', { style: S.err }, '目录不可用：' + (catalog.reason || catalog.error || '未知原因'))
   const rows: CatalogRow[] = catalog.rows || []
   return h('div', null,
