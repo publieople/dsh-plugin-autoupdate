@@ -102,6 +102,35 @@ const rolled = await call('POST', ROUTE_BASE + '/rollback', { body: {} })
 check('rollback 200 and ok', rolled.status === 200 && rolled.json.ok === true, JSON.stringify(rolled.json).slice(0, 220))
 check('manifest restored byte for byte', manifest() === before)
 
+console.log('')
+console.log('3b) discover: catalog, lock, install')
+const catalog = await call('GET', ROUTE_BASE + '/catalog?q=dsh-whale-widget&limit=5')
+check('catalog 200', catalog.status === 200, JSON.stringify(catalog.json).slice(0, 160))
+const entry = ((catalog.json && catalog.json.rows) || []).find((row) => row.name === 'dsh-whale-widget' || row.npm === 'dsh-whale-widget')
+check('the market catalog knows the fixture package', Boolean(entry), JSON.stringify((catalog.json && catalog.json.rows) || []).slice(0, 160))
+check('catalog carries categories for the filter', Array.isArray(catalog.json && catalog.json.categories) && catalog.json.categories.length > 0)
+
+const locked = await call('POST', ROUTE_BASE + '/lock', { body: { name: 'dsh-whale-widget' } })
+check('lock 200', locked.status === 200)
+const afterLock = await call('GET', ROUTE_BASE + '/status')
+const lockedReport = (afterLock.json && afterLock.json.reports && afterLock.json.reports[0]) || {}
+check('locked package leaves the offer', !(lockedReport.rows || []).some((row) => row.name === 'dsh-whale-widget'), JSON.stringify((lockedReport.rows || []).map((r) => r.name)))
+check('but stays visible as locked', (lockedReport.lockedRows || []).some((row) => row.name === 'dsh-whale-widget'))
+const unlocked = await call('POST', ROUTE_BASE + '/unlock', { body: { name: 'dsh-whale-widget' } })
+check('unlock 200', unlocked.status === 200)
+const afterUnlock = await call('GET', ROUTE_BASE + '/status')
+check('and it is offered again', ((afterUnlock.json.reports || [])[0].rows || []).some((row) => row.name === 'dsh-whale-widget'))
+
+if (entry !== undefined) {
+  const spec = entry.npm || entry.name
+  const forged = await call('POST', ROUTE_BASE + '/install', { body: { confirm: true, spec }, host: 'evil.example' })
+  check('install refuses a forged Host', forged.status === 403)
+  const pinned = await call('POST', ROUTE_BASE + '/install', { body: { confirm: true, spec: spec + '@1.0.0' } })
+  check('install refuses a pinned spec', pinned.status === 400, JSON.stringify(pinned.json))
+  const installed = await call('POST', ROUTE_BASE + '/install', { body: { confirm: true, spec } })
+  check('install of an already-present package succeeds (idempotent add)', installed.status === 200 && installed.json.ok === true, JSON.stringify(installed.json).slice(0, 200))
+}
+
 dispose()
 server.close()
 console.log('')

@@ -14,6 +14,11 @@
    不是服务查找 —— 见下面第三条实测；返回 409 并说明原因）；CLI / 服务部署才执行 —— 有 supervisor（systemd/pm2/launchd）就直接退出交给它，
    没有才 detached 拉起自己并等端口释放。**绝不 `app.relaunch` Electron。**
 5. **只写 profile 目录**（`$DSH_HOME/profiles/<name>`），不碰用户代码、不碰 agent 配置。
+   「锁定」写的是 profile 目录里的 `.plugin-autoupdate.json`（我们自己的状态文件），
+   **绝不**为了锁定去动 manifest、也绝不做版本钉住。
+7. **「发现」只能装官方目录里的包，且永远不带版本。** 目录就是 dsh-market 用的那份
+   `https://awesome-dsh-plugin.com/plugins.json`；安装 spec 必须能在其中找到，且只取 `npm`/`name`，
+   `pkg@1.2.3` 一律 400（否则又绕开年龄策略）。
 6. **Windows 上自己拼命令行再交给 cmd.exe。** Node 的 `shell: true` 不转义参数（DEP0190），
    cmd 会吃掉 `^`。走 `buildWindowsCommand()` + `quoteForCmd()`，别直接 `spawn(cmd, args, { shell: true })`。
 

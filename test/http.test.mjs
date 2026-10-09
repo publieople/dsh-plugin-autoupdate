@@ -161,6 +161,90 @@ test('status advertises the restart capability', async () => {
   assert.equal(res.json().restart.supported, false)
 })
 
+const CATALOG = {
+  categories: { dev: { en: 'Development', zh: '开发' } },
+  plugins: [{ name: 'dsh-known', npm: 'dsh-known', owner: 'x', category: 'dev', description: { en: 'Known', zh: '已知' }, stars: 3, downloads: 9 }],
+}
+
+test('catalog is read-only and serves rows plus categories', async () => {
+  const handlers = createRouteHandlers({ ...CLI, catalogOf: async () => ({ catalog: CATALOG, fetchedAt: 1, cached: true }) })
+  const ok = fakeRes()
+  await handlers.catalog(fakeReq({ url: ROUTE_BASE + '/catalog?q=known' }), ok)
+  assert.equal(ok.statusCode, 200)
+  assert.equal(ok.json().rows[0].name, 'dsh-known')
+  assert.equal(ok.json().categories[0].id, 'dev')
+  const wrong = fakeRes()
+  await handlers.catalog(fakeReq({ method: 'POST' }), wrong)
+  assert.equal(wrong.statusCode, 405)
+})
+
+test('install is fenced, confirmed and catalog-limited', async () => {
+  const installed = []
+  const handlers = createRouteHandlers({
+    ...CLI,
+    catalogOf: async () => ({ catalog: CATALOG, fetchedAt: 1 }),
+    installPackage: async (args) => { installed.push(args); return { code: 0 } },
+  })
+  const forged = fakeRes()
+  await handlers.install(fakeReq({ method: 'POST', host: 'evil.example', body: '{"confirm":true,"spec":"dsh-known"}' }), forged)
+  assert.equal(forged.statusCode, 403)
+  const unconfirmed = fakeRes()
+  await handlers.install(fakeReq({ method: 'POST', body: '{"spec":"dsh-known"}' }), unconfirmed)
+  assert.equal(unconfirmed.statusCode, 400)
+  const unknown = fakeRes()
+  await handlers.install(fakeReq({ method: 'POST', body: '{"confirm":true,"spec":"dsh-evil"}' }), unknown)
+  assert.equal(unknown.statusCode, 400)
+  assert.match(unknown.json().reason, /not in the catalog/)
+  const pinned = fakeRes()
+  await handlers.install(fakeReq({ method: 'POST', body: '{"confirm":true,"spec":"dsh-known@1.0.0"}' }), pinned)
+  assert.equal(pinned.statusCode, 400, 'a pinned spec is never accepted')
+  const ok = fakeRes()
+  await handlers.install(fakeReq({ method: 'POST', body: '{"confirm":true,"spec":"dsh-known"}' }), ok)
+  assert.equal(ok.statusCode, 200)
+  assert.equal(ok.json().spec, 'dsh-known')
+  assert.equal(ok.json().restartRequired, true)
+  assert.equal(installed.length, 1)
+  assert.equal(installed[0].profile, 'm1test')
+})
+
+test('lock and unlock write only our own state, behind the host fence', async () => {
+  const calls = []
+  const handlers = createRouteHandlers({
+    ...CLI,
+    lockPackage: (dir, entry) => { calls.push(['lock', dir, entry]); return [entry] },
+    unlockPackage: (dir, name) => { calls.push(['unlock', dir, name]); return [] },
+  })
+  const forged = fakeRes()
+  await handlers.lock(fakeReq({ method: 'POST', host: 'evil.example', body: '{"name":"x"}' }), forged)
+  assert.equal(forged.statusCode, 403)
+  const nameless = fakeRes()
+  await handlers.lock(fakeReq({ method: 'POST', body: '{}' }), nameless)
+  assert.equal(nameless.statusCode, 400)
+  const locked = fakeRes()
+  await handlers.lock(fakeReq({ method: 'POST', body: '{"name":"dsh-known","version":"1.0.0"}' }), locked)
+  assert.equal(locked.statusCode, 200)
+  assert.equal(calls[0][0], 'lock')
+  assert.equal(calls[0][2].name, 'dsh-known')
+  const unlocked = fakeRes()
+  await handlers.unlock(fakeReq({ method: 'POST', body: '{"name":"dsh-known"}' }), unlocked)
+  assert.equal(unlocked.statusCode, 200)
+  assert.equal(calls[1][0], 'unlock')
+  assert.equal(calls[1][2], 'dsh-known')
+})
+
+test('status splits locked rows out of the offer', async () => {
+  const handlers = createRouteHandlers({
+    ...CLI,
+    check: async (profile) => ({ profile, rows: [{ name: 'a', current: '1', latest: '2' }, { name: 'b', current: '1', latest: '2' }] }),
+    locksOf: () => [{ name: 'a' }],
+  })
+  const res = fakeRes()
+  await handlers.status(fakeReq({}), res)
+  const report = res.json().reports[0]
+  assert.deepEqual(report.rows.map((r) => r.name), ['b'])
+  assert.deepEqual(report.lockedRows.map((r) => r.name), ['a'])
+})
+
 test('sendJson writes a no-store JSON response', () => {
   const res = fakeRes()
   sendJson(res, 201, { ok: true })

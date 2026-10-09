@@ -8,7 +8,7 @@
 |---|---|---|
 | M0 | 仓库与骨架（清单、cordis patch、CLI 契约、单测） | ✅ 已完成 |
 | M1 | host 侧真实组合验证（临时 profile 跑通 check/apply/rollback） | ✅ 已完成（25/25） |
-| M2 | 客户端页面（UniGetUI 式三视图） | 🚧 v0.2.0：主栏页面 + 侧栏入口 + 刷新/重启按钮 ✅；已安装/可用更新两视图 ✅；**发现视图待做** |
+| M2 | 客户端页面（UniGetUI 式四视图） | 🚧 v0.2.0：主栏页面 + 侧栏入口 + 刷新/重启 + 可用更新/已安装/发现/已锁定 ✅；**本地化待做** |
 | M3 | 发布到 npm + 打 tag | ⬜ 待做 |
 | M4 | 提交进插件目录（别人能搜到） | ⬜ 待做 |
 
@@ -83,11 +83,20 @@
   （能力门禁：桌面版报 409 + 原因，CLI/服务部署自重启；见 AGENTS.md 第 4 条）
 - jsdom 挂载测试用官方 `@deepseek-ai/dsh-client-test-runtime`
 
-### M2 剩余（你已确认要做，但排在后面）
+### M2 剩余
 
-1. **发现视图**：借 DSH 市场的数据源，自己做「发现 + 安装」页（2026-10-09 你定的方向；当时说先不急）
-2. **忽略更新**：需要新增一份持久化状态（按插件名 + 版本记录忽略项），core 稳了再加
-3. 页面本地化（现在 label 是硬编码中文；生态惯例是 `ctx.locale.register` + 中英词典）
+1. 页面本地化（现在文案是硬编码中文；生态惯例是 `ctx.locale.register` + 中英词典）—— **下一轮**
+
+### 已完成：发现视图 + 锁定（2026-10-09，第二轮）
+
+- **发现**：host 侧拉 `https://awesome-dsh-plugin.com/plugins.json`（=`dsh-market` 的官方目录，4460 个插件，
+  5.3 MB，带分类/中英描述/stars/下载量/能力标注），缓存在 `$DSH_HOME/.plugin-autoupdate-catalog.json`（TTL 12h，
+  拉不到就退回旧缓存并标注 stale）；页面走 `GET /plugin-autoupdate/catalog`，搜索框 + 分类筛选 + 安装按钮。
+- **安装**：`POST /install`，要求 `confirm: true` + Host 信任；**spec 必须在目录里，且只取 npm 名，绝不带版本**
+  （`pkg@x` → 400），然后交给 `dsh plugin add`。装完提示需要重启。
+- **锁定**：`POST /lock`、`/unlock`，状态写在 `<profile>/.plugin-autoupdate.json`（我们自己的文件，不碰 manifest、不钉版本）；
+  `check`/`/status` 会把锁定的包从「可更新」移进 `lockedRows` —— **抑制提示，但不隐藏事实**；agent 工具也有 `lock`/`unlock`。
+- 页面：四个 tab（可用更新 / 已安装 / 发现 / 已锁定），可用更新里每行多一个「锁定」按钮。
 
 ### 已完成（v0.2.0，2026-10-09）
 
