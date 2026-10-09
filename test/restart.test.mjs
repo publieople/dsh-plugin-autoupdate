@@ -8,18 +8,34 @@ test('Desktop is reported as unsupported, with the reason, and never respawned',
   assert.match(capability.reason, /Desktop|tray/i)
 })
 
-test('the Electron app process is refused even when no Desktop service is published', () => {
+test('the desktop HOST process is refused, exactly as measured on the running app', () => {
+  const argv = [
+    'D:\\DSH\\DeepSeek Harness.exe',
+    '--expose-internals',
+    'D:\\DSH\\resources\\app.asar\\dsh\\node_modules\\@deepseek-ai\\dsh-desktop-host\\lib\\index.js',
+    'D:\\DSH\\resources\\app.asar',
+  ]
+  // It is ELECTRON_RUN_AS_NODE, which the first fix wrongly treated as an ordinary host.
+  const capability = restartCapability({ argv, env: { ELECTRON_RUN_AS_NODE: '1' }, versions: { electron: '44.0.0' } })
+  assert.equal(capability.supported, false)
+  assert.match(capability.reason, /Desktop/)
+  const scheduled = scheduleRestart({ argv, env: { ELECTRON_RUN_AS_NODE: '1' }, versions: { electron: '44.0.0' } })
+  assert.equal(scheduled.mode, 'unsupported')
+  assert.equal(scheduled.exit, undefined, 'nothing may exit the desktop host')
+})
+
+test('the Electron main process is refused even without the host entry', () => {
   // The regression that lit the button on the desktop build.
-  const electron = restartCapability({ env: {}, versions: { electron: '44.0.0', node: '24.18.1' } })
+  const electron = restartCapability({ argv: ['node', 'app.js'], env: {}, versions: { electron: '44.0.0', node: '24.18.1' } })
   assert.equal(electron.supported, false)
   assert.match(electron.reason, /Desktop/)
-  const scheduled = scheduleRestart({ env: {}, versions: { electron: '44.0.0' } })
+  const scheduled = scheduleRestart({ argv: ['node', 'app.js'], env: {}, versions: { electron: '44.0.0' } })
   assert.equal(scheduled.mode, 'unsupported')
   assert.equal(scheduled.exit, undefined, 'nothing may exit the Electron process')
 })
 
 test('a CLI host running inside the Electron binary is NOT the app process', () => {
-  const capability = restartCapability({ env: { ELECTRON_RUN_AS_NODE: '1' }, versions: { electron: '44.0.0' } })
+  const capability = restartCapability({ argv: ['D:\\DSH\\DeepSeek Harness.exe', '--test', 'test/'], env: { ELECTRON_RUN_AS_NODE: '1' }, versions: { electron: '44.0.0' } })
   assert.equal(capability.supported, true)
 })
 
