@@ -37,8 +37,8 @@ window.__ModuleLoader__.load({ id: '<包名>', factory: (require) => { /* CJS �
 - `cordis.patch.yml` 必须是顶层数组，并在 `package.json.dsh.bundle.patch` 指向它。
 - peer 范围必须覆盖目标 DSH 版本（当前 `^0.2.0-rc.1` 覆盖到 `0.2.0-rc.2`）；
   声明不覆盖会被安装闸门直接拒绝。
-- 这是 host-only 插件：**不要**加 `dsh.client`，也不要构建 client bundle。
-  加设置页时，client 依赖要写在 client bundle 导出的 `export const inject` 里，
+- 插件是 **host + client**：`dsh.client.platform: 'web'` + `exports['./client']` 指向构建出来的 `lib/client.js`。
+  client 依赖写在 client bundle 导出的 `export const inject` 里（真实激活依据）；
   `dsh.client.inject` 只是给预检/HMR diff 用的信息性元数据。
 
 ## 开发

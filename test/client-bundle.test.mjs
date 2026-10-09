@@ -33,9 +33,10 @@ test('lib/client.js is a loader factory, not an ES module', () => {
   const { source } = loadBundle()
   assert.match(source, /window\.__ModuleLoader__\.load\(\{/)
   assert.match(source, /id: "dsh-plugin-autoupdate"/)
-  // The trailing sourceMappingURL comment is the only thing allowed after the footer.
-  const withoutMap = source.replace(/\n\/\/# sourceMappingURL=.*\s*$/, '')
-  assert.match(withoutMap.trimEnd(), /return module\.exports; \} \};\)$/)
+  // The formatter may split the footer across lines; the sourceMappingURL comment
+  // is the only thing allowed after it.
+  const body = source.split('//# sourceMappingURL=')[0].trimEnd()
+  assert.match(body, /return module\.exports;\s*\}\s*\}\);$/)
   assert.equal(/^\s*(import|export)\s/m.test(source), false, 'a classic script cannot carry import/export')
 })
 
