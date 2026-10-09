@@ -44,7 +44,13 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 & 'D:\DSH\DeepSeek Harness.exe' --test test/
 ```
 
-## 验收标准（M1，尚未完成）
+## 验收（M1 已完成，见 `PLAN.md`）
 
-见 `PLAN.md`。核心是：在**临时 profile** 上真实安装并跑通 check / apply / rollback，
-再在真实 profile 上只跑只读的 check。
+临时 profile 上跑一遍离线的实时校验（会真的改动那个 profile，**别指向 desktop**）：
+
+```sh
+DSH_CLI=<dsh.cmd 路径> node scripts/m1-live-check.mjs <临时 profile 名>
+```
+
+它覆盖：工具契约、check、apply（含快照字节比对）、rollback、精确钉住路径、失败路径。
+在真实 profile 上只允许跑只读的 `action=check`。
