@@ -39,6 +39,10 @@ dsh plugin --profile <你的 profile> add dsh-plugin-autoupdate
 - `latest`：等价于 `--latest`，忽略记录的 semver 范围来选版本 —— **仍然受发布时长策略约束**
 - 工具**不会**替你重启 DSH
 
+> 注意：`dsh plugin add <pkg>@<版本或范围>` 记录的是**解析后的精确版本**（实测 pnpm 行为，
+> 与 dsh 包装器无关）。这类依赖用普通 `apply` 不会被自动升级——工具会明确告诉你「有可用更新
+> 但被记录的范围挡住」，此时用 `latest=true`（仍受发布时长策略约束）。
+
 ## 安全模型
 
 这几条是刻意的：

@@ -11,6 +11,15 @@
 3. **写入前必须快照。** `applyUpdate` 先 `snapshotProfile`，保留最近 5 份；`rollback` 是一等公民。
 4. **不替用户重启 DSH。** 只能报告 `restartRequired`。
 5. **只写 profile 目录**（`$DSH_HOME/profiles/<name>`），不碰用户代码、不碰 agent 配置。
+6. **Windows 上自己拼命令行再交给 cmd.exe。** Node 的 `shell: true` 不转义参数（DEP0190），
+   cmd 会吃掉 `^`。走 `buildWindowsCommand()` + `quoteForCmd()`，别直接 `spawn(cmd, args, { shell: true })`。
+
+## 两条实测行为（别再踩）
+
+- `dsh plugin add <pkg>@<范围>` 存的是**解析后的精确版本**（pnpm 行为）：这种依赖 `update` 不会动它，
+  必须 `latest: true` 才能升。工具会主动报告这种情况。
+- `defineTool` 会把 `parameters` 归一化成 JSON Schema（`required: ['action']`），不是原来的 `required: true`。
+  写测试断言时按归一化后的形状写。
 
 ## 契约
 

@@ -7,7 +7,7 @@
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M0 | 仓库与骨架（清单、cordis patch、CLI 契约、单测） | ✅ 已完成 |
-| M1 | host 侧真实组合验证（临时 profile 跑通 check/apply/rollback） | ⬜ 待做 |
+| M1 | host 侧真实组合验证（临时 profile 跑通 check/apply/rollback） | ✅ 已完成（25/25） |
 | M2 | 客户端设置页（可选） | ⬜ 待定 |
 | M3 | 发布到 npm + 打 tag | ⬜ 待做 |
 | M4 | 提交进插件目录（别人能搜到） | ⬜ 待做 |
@@ -18,7 +18,23 @@
 - `lib/`：`dsh-cli.js`（定位 DSH CLI）、`profiles.js`（发现 profile）、`outdated.js`（跑 CLI + 解析 `pnpm outdated`）、`apply.js`（快照 / 更新 / 回滚）、`index.js`（工具注册）
 - `test/`：5 个单测全过（表格解析、manifest diff）
 
-## M1 —— 真实组合验证（下一步）
+## M1 —— 真实组合验证 ✅ 已完成（2026-10-09）
+
+在临时 profile `m1test` 上验证，**不碰 desktop**：
+
+- 从 GitHub 安装（真实用户路径）：`dsh plugin --profile m1test add github:publieople/dsh-plugin-autoupdate` → 23 个包，exit 0，**没有被安装闸门拒**
+- `dsh --profile m1test --dump-config` → 368 行，exit 0，包含 `- id: plugin-autoupdate`，零错误
+- `node scripts/m1-live-check.mjs m1test` → **25/25 通过**：工具契约（defineTool 归一化后的 schema）、check、apply（含快照字节级校验）、rollback、精确钉住路径、失败路径
+- 单测 `npm test` → **10/10 通过**（含新增的 cmd 转义测试）
+
+**M1 抓到并修掉的两个真实缺陷：**
+
+1. **Windows 参数被 cmd.exe 吃掉。** `runCli` 用 `shell: true` 时 Node 只把参数空格拼接、不转义（DEP0190），
+   cmd.exe 于是把 `pkg@^1.2.3` 变成 `pkg@1.2.3`。已改为自己构造命令行并对每个参数做 cmd 转义
+   （引号处理元字符，`%` 显式翻倍），并补了 `test/shell.test.mjs`。
+2. **钉住版本的依赖不会自动升级，但工具没说。** `apply` 现在会在「manifest 没动」时额外报告
+   「解析器仍然提供了这些更新，只是被记录的范围挡住」，并提示 `latest=true`。
+   （顺带确定：`dsh plugin add pkg@<范围>` 存的是**解析后的精确版本**——pnpm 行为，已写进 README。）
 
 验收标准，缺一不可：
 

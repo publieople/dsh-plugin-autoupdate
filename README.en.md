@@ -41,6 +41,11 @@ It registers one agent-facing tool, `dsh_plugin_updates`:
 - `latest`: equivalent to `--latest`, ignoring the recorded semver ranges - **still bounded by the release-age policy**
 - the tool never restarts DSH for you
 
+> Note: `dsh plugin add <pkg>@<version-or-range>` records the **resolved exact version**
+> (measured pnpm behaviour, not the dsh wrapper). Plain `apply` will correctly leave such a
+> pin alone, and the tool says so - "updates are offered and blocked by the recorded range" -
+> at which point `latest=true` moves it (still bounded by the release-age policy).
+
 ## Safety model
 
 Each of these is deliberate:
