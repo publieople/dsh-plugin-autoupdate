@@ -17,7 +17,15 @@
 6. **Windows 上自己拼命令行再交给 cmd.exe。** Node 的 `shell: true` 不转义参数（DEP0190），
    cmd 会吃掉 `^`。走 `buildWindowsCommand()` + `quoteForCmd()`，别直接 `spawn(cmd, args, { shell: true })`。
 
-## 两条实测行为（别再踩）
+## 三条实测行为（别再踩）
+
+- **判定「是不是官方桌面版」只能看 `process.versions.electron`（且没有 `ELECTRON_RUN_AS_NODE`）。**
+  2026-10-09 我用 `ctx.get('desktopProfiles')` 判，在这台机器的运行中宿主里判成了「非桌面」，
+  页面上的「重启 DSH」被点亮 —— 点下去就是 `process.exit(0)` 掉 Electron 主进程。
+  `scheduleRestart()` 里已经加了硬闸（Electron 进程一律拒绝），但门禁本身也别再用服务查找。
+- **别在用户可能刷新的时刻给运行中的桌面版 remove+add 插件。** 客户端 bundle 会短暂消失，
+  此时「刷新界面」会让 web boot 挂掉（2026-10-09 14:31 真实发生：dsh-plugin-autoupdate 与 dshmarket 双双加载失败）。
+  装完等几秒，或先告知用户别刷新。
 
 - `dsh plugin add <pkg>@<范围>` 存的是**解析后的精确版本**（pnpm 行为）：这种依赖 `update` 不会动它，
   必须 `latest: true` 才能升。工具会主动报告这种情况。
