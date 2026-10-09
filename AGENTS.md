@@ -23,6 +23,17 @@
 
 ## 契约
 
+**client bundle 不是 ES module。** 它必须是 classic script 里的闭包工厂：
+
+```js
+window.__ModuleLoader__.load({ id: '<包名>', factory: (require) => { /* CJS 产物 */ return module.exports } })
+```
+
+`require` 由 web client 的模块表回答（react 与 `@deepseek-ai/dsh-client-*` 保持 external，其余内联）。
+2026-10-09 我在这一条上翻过车：用普通 ESM 构建，构建、host 单测、CI 全绿，
+一重启桌面版就 `Cannot use import statement outside a module`，整个 web boot 挂掉。
+`tsdown.config.ts` 里的 banner/intro/footer 就是为此存在的，`test/client-bundle.test.mjs` 离线守这条契约。
+
 - `cordis.patch.yml` 必须是顶层数组，并在 `package.json.dsh.bundle.patch` 指向它。
 - peer 范围必须覆盖目标 DSH 版本（当前 `^0.2.0-rc.1` 覆盖到 `0.2.0-rc.2`）；
   声明不覆盖会被安装闸门直接拒绝。
