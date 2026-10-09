@@ -40,7 +40,10 @@ test('a CLI host running inside the Electron binary is NOT the app process', () 
 })
 
 test('a plain CLI host supports restart', () => {
-  const capability = restartCapability({ desktop: false, env: {} })
+  // Pin argv/versions/env. Run through the DSH-bundled Node (which AGENTS.md
+  // documents), the ambient process IS the Electron binary and the ambient desktop
+  // check is then correct - this test has to describe a CLI host, not inherit one.
+  const capability = restartCapability({ desktop: false, argv: ['node', 'main.js'], versions: {}, env: {} })
   assert.equal(capability.supported, true)
   assert.equal(capability.supervisor, null)
 })
@@ -53,14 +56,14 @@ test('supervisors are recognised so we never double-start a host', () => {
 })
 
 test('under a supervisor the restart is just an exit', () => {
-  const scheduled = scheduleRestart({ supervisor: 'systemd', argv: ['node', 'x'], execPath: 'node' })
+  const scheduled = scheduleRestart({ supervisor: 'systemd', argv: ['node', 'x'], execPath: 'node', versions: {}, env: {} })
   assert.equal(scheduled.mode, 'supervisor')
   assert.equal(scheduled.supervisor, 'systemd')
   assert.equal(typeof scheduled.exit, 'function')
 })
 
 test('without a supervisor it detaches a helper instead of exiting blind', () => {
-  const scheduled = scheduleRestart({ supervisor: null, argv: [process.execPath, 'main.js'], execPath: process.execPath, port: null })
+  const scheduled = scheduleRestart({ supervisor: null, argv: [process.execPath, 'main.js'], execPath: process.execPath, port: null, versions: {}, env: {} })
   assert.equal(scheduled.mode, 'helper')
   assert.match(scheduled.helper, /dsh-plugin-autoupdate-restart-.*\.mjs$/)
   assert.match(scheduled.log, /dsh-plugin-autoupdate-restart-.*\.log$/)

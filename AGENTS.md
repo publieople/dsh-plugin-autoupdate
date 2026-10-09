@@ -69,15 +69,21 @@ window.__ModuleLoader__.load({ id: '<包名>', factory: (require) => { /* CJS �
 
 ```sh
 npm install          # 只为装 devDependencies（peer 同名，见仓库惯例）
-npm test             # node --test test/，离线、无网络依赖
+npm test             # node --test，离线、无网络依赖
 ```
 
 本机（Windows + DSH 桌面版）也可以直接用 DSH 自带的 Node：
 
 ```powershell
 $env:ELECTRON_RUN_AS_NODE = '1'
-& 'D:\DSH\DeepSeek Harness.exe' --test test/
+& 'D:\DSH\DeepSeek Harness.exe' --test
 ```
+
+**别写成 `--test test/`**（2026-10-09 实测）：asar 里那个 Node 不展开目录参数，会报
+`Cannot find module …\test`，还被算作一个失败的「测试」，看起来像代码坏了。不带参数才会自己发现
+`test/*.test.mjs`；要指定就显式列文件。两条命令都必须全绿，所以测试本身也别去读环境的
+`process.versions` / `process.argv` —— 在桌面版 Node 里那两样是 Electron 的，
+`restart.test.mjs` 就因为漏了这一点只在其中一条命令下红。
 
 ## 验收（M1 已完成，见 `PLAN.md`）
 

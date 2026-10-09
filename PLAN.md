@@ -74,18 +74,27 @@
   （2026-10-09 用 ESM 构建导致桌面版整个 web boot 挂掉）。
 - `test/client-bundle.test.mjs` 离线执行产物，断言工厂格式、`require('react')` 外置、两个 slot 注册与 `label()` 形态。
 
-### 待做（commit 3）
+### 客户端页面（commit 3）—— 除 jsdom 挂载测试外全部并入 v0.2.0
 
-- client：`src/client/*.tsx` + tsdown 构建 → `lib/client.js`；`exports['./client']`、`dsh.client.platform: 'web'`
-- 客户端依赖写在 **client bundle 导出的 `export const inject`** 里（`dsh.client.inject` 只是预检/HMR 用的信息性元数据）
-- 页面：已安装 / 可用更新两个视图先做（含勾选、批量应用、导出 CSV、快照列表）；「发现」后做
-- 右上角两个按钮：**刷新界面**（`location.reload()`，让新装的客户端插件立刻生效）与**重启 DSH**
+- ✅ client：`src/client/*.tsx` + tsdown 构建 → `lib/client.js`；`exports['./client']`、`dsh.client.platform: 'web'`
+- ✅ 客户端依赖写在 **client bundle 导出的 `export const inject`** 里（`dsh.client.inject` 只是预检/HMR 用的信息性元数据）
+- ✅ 四个视图：可用更新（勾选 / 批量应用 / 导出 CSV / 锁定）、已安装、发现、已锁定
+- ✅ 右上角两个按钮：**刷新界面**（`location.reload()`）与**重启 DSH**
   （能力门禁：桌面版报 409 + 原因，CLI/服务部署自重启；见 AGENTS.md 第 4 条）
-- jsdom 挂载测试用官方 `@deepseek-ai/dsh-client-test-runtime`
+- ⬜ jsdom 挂载测试用官方 `@deepseek-ai/dsh-client-test-runtime`
 
 ### M2 剩余
 
 1. 页面本地化（现在文案是硬编码中文；生态惯例是 `ctx.locale.register` + 中英词典）—— **下一轮**
+
+### 已完成：文档对齐（2026-10-09，第三轮）
+
+- README.md / README.en.md 重写：补上 v0.2.0 的页面四视图、发现目录的数据源与缓存、锁定语义、
+  8 条 HTTP 路由与信任围栏、重启能力门禁、快照目录；安全模型扩到 7 条
+- AGENTS.md 的开发命令修正：`--test test/` 在 DSH 自带 Node（asar 里的 v24）里不展开目录参数，
+  会报 `Cannot find module …\test` 并算作一个失败的「测试」；改用不带参数的 `--test`
+- `test/restart.test.mjs` 不再继承环境的 `process.versions` / `process.argv` —— 桌面版 Node 里那两样是
+  Electron 的，`restartCapability({ desktop: false, env: {} })` 会被环境判成桌面宿主而失败（55 中红 1）
 
 ### 已完成：发现视图 + 锁定（2026-10-09，第二轮）
 
