@@ -40,7 +40,7 @@ five tabs:
 | 已安装 / Installed | the dependencies recorded in each profile, their ranges and sources, plus "roll back the last update" |
 | 发现 / Discover | the plugin market's official catalog: search, filter by category, install in one click (below) |
 | 已锁定 / Locked | packages whose updates are no longer offered, with an unlock button |
-| 自动更新 / Auto-update | scheduled checks, and updates that apply themselves once the conditions are met (below); one block of switches and last-run facts per profile |
+| 自动更新 / Auto-update | scheduled checks, and updates that apply themselves once the conditions are met (**off by default**, you turn it on - below); one block of switches and last-run facts per profile |
 
 Toolbar: reload · update selected · update all · ignore ranges (`--latest`) · rollback · export CSV.
 Two buttons in the top right:
@@ -104,6 +104,10 @@ Two buttons in the top right:
 "Check on a schedule, and update itself when the conditions are met" - the switches live under the
 自动更新 tab, are stored per profile in `<profile>/.plugin-autoupdate.json`, and the host **re-reads
 them every minute**, so flipping one takes effect within a beat instead of needing a restart.
+
+**All three switches default to off.** A profile that was just installed, or one whose page was never
+opened, runs no checks by itself, writes nothing to the profile, and never touches a plugin on its own -
+turn it on here if you want it. This plugin does not decide that for you.
 
 | Switch | Meaning |
 |---|---|
