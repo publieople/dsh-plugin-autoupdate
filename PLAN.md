@@ -11,7 +11,7 @@
 | M2 | 客户端页面（UniGetUI 式四视图） | ✅ v0.2.0：主栏页面 + 侧栏入口 + 刷新/重启 + 可用更新/已安装/发现/已锁定 + 中英本地化；仅剩 jsdom 挂载测试 |
 | M2+ | 自动更新：定时检查 + 满足条件自己应用（用户 2026-10-11 拍板） | ✅ v0.3.0 |
 | M3 | 发布到 npm + 打 tag | ✅ 0.2.0 已发布（2026-10-10）；此后打 tag 自动发布，Trusted Publisher 已验证 |
-| M4 | 提交进插件目录（别人能搜到） | ⬜ 待做（条目已拟好，等确认开 PR） |
+| M4 | 提交进插件目录（别人能搜到） | 🔄 已开 PR [#7099](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/7099)（2026-10-11，等合并）；dsh.works / dsh.so 未提交 |
 
 ## M0 —— 已完成
 
@@ -88,6 +88,20 @@
 
 - ✅ 页面本地化（2026-10-09，第四轮，见下）
 - ⬜ jsdom 挂载测试（官方 `@deepseek-ai/dsh-client-test-runtime`）
+
+### 已完成：投稿 awesome-dsh-plugin（2026-10-11，第六轮）
+
+用户原话（m00829）："提交进 awesome-dsh-plugin 目录 开吧"。
+
+- 条目文件：`data/plugins/publieople__dsh-plugin-autoupdate.yml`（`url` 与仓库逐字一致、`name: publieople/dsh-plugin-autoupdate`、
+  `category: market`、`description.en` + `description.zh` 各一句）。这是**唯一的提交内容**——两份 README 由仓库脚本生成，不手改。
+- 分支 `add-dsh-plugin-autoupdate` 推在 fork `publieople/awesome-dsh-plugin`（已 `gh repo sync` 到上游 main `4693e5a`），
+  PR **#7099**：https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/7099
+- 本地预检（在上游 fork 里跑）：`npm ci` 后 `scripts/lib/entries.mjs` 的 `readEntries`/`validateEntries` 对我们的条目零问题
+  （4490 条里认出了它，slug 与文件名一致）；`node scripts/generate-readme.mjs` 生成的那一行读通后**已 `git checkout` 回退**，PR 只有一个文件。
+- 前置条件逐条对齐（contributing.md）：`dsh.bundle.patch` ✅ / 仓库创建 2026-10-08（满 1 天）✅ / `dsh-plugin` topic ✅ /
+  真实代码（lib+src，76 个测试）✅ / npm 0.3.1 的 `repository` 指回本仓库 ✅ / 无营销词 ✅ / `dsh.bundle` 之外没有 `npm:` 之类未知字段 ✅。
+- 教训：条目里 `description` 只要含 `: `（冒号+空格）就必须加引号，否则 YAML 把它读成嵌套键；我们的英文句子刻意避开了这个组合。
 
 ### 已完成：自动更新（2026-10-11，第五轮）
 
