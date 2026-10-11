@@ -77,7 +77,7 @@ test('status advertises the routes it registered, so a stale host is detectable'
   // only loaded at process start - so a page refresh can show tabs whose routes
   // the running host does not have (that is how 发现 404ed on 2026-10-09). The
   // page compares this list instead of rendering an empty catalog.
-  assert.deepEqual(payload.features, ['status', 'apply', 'rollback', 'restart', 'catalog', 'install', 'lock', 'unlock'])
+  assert.deepEqual(payload.features, ['status', 'apply', 'rollback', 'restart', 'catalog', 'install', 'lock', 'unlock', 'settings'])
   assert.equal(typeof payload.version, 'string')
   assert.match(payload.version, /^\d+\.\d+\.\d+/)
 })
@@ -257,6 +257,62 @@ test('status splits locked rows out of the offer', async () => {
   const report = res.json().reports[0]
   assert.deepEqual(report.rows.map((r) => r.name), ['b'])
   assert.deepEqual(report.lockedRows.map((r) => r.name), ['a'])
+})
+
+test('status carries the timer settings and the last scheduled run', async () => {
+  const handlers = createRouteHandlers({
+    ...CLI,
+    check: async (profile) => ({ profile, rows: [] }),
+    settingsOf: () => ({ checkOnStart: true, checkEveryMinutes: 60, applyUpdates: false }),
+    autoOf: () => ({ lastCheckAt: '2026-10-11T01:00:00.000Z', lastOffers: 2 }),
+  })
+  const res = fakeRes()
+  await handlers.status(fakeReq({}), res)
+  const report = res.json().reports[0]
+  assert.equal(report.settings.checkEveryMinutes, 60)
+  assert.equal(report.auto.lastOffers, 2)
+})
+
+test('settings writes behind the fence, without a confirm, and can forget failures', async () => {
+  const calls = []
+  const handlers = createRouteHandlers({
+    ...CLI,
+    writeSettings: (dir, patch) => { calls.push(['settings', dir, patch]); return { checkOnStart: false, checkEveryMinutes: 180, applyUpdates: true } },
+    clearFailures: (dir) => { calls.push(['clear', dir]); return {} },
+    failuresOf: () => ({}),
+    autoOf: () => ({}),
+  })
+
+  const forged = fakeRes()
+  await handlers.settings(fakeReq({ method: 'POST', host: 'evil.example', body: '{"settings":{}}' }), forged)
+  assert.equal(forged.statusCode, 403)
+  assert.equal(calls.length, 0)
+
+  // Same class of write as lock/unlock: reversible and installs nothing, so no confirm.
+  const ok = fakeRes()
+  await handlers.settings(fakeReq({ method: 'POST', body: '{"settings":{"checkEveryMinutes":180},"clearFailures":true}' }), ok)
+  assert.equal(ok.statusCode, 200)
+  assert.deepEqual(calls[0], ['clear', '/tmp/dsh/profiles/m1test'])
+  assert.deepEqual(calls[1], ['settings', '/tmp/dsh/profiles/m1test', { checkEveryMinutes: 180 }])
+  assert.equal(ok.json().reports[0].settings.checkEveryMinutes, 180)
+
+  const methods = fakeRes()
+  await handlers.settings(fakeReq({ method: 'GET' }), methods)
+  assert.equal(methods.statusCode, 405)
+})
+
+test('settings refuses when no profile resolves instead of writing to nowhere', async () => {
+  let written = false
+  const handlers = createRouteHandlers({
+    ...CLI,
+    resolve: () => ({ profiles: [], unknown: [], all: [] }),
+    writeSettings: () => { written = true; return {} },
+  })
+  const res = fakeRes()
+  await handlers.settings(fakeReq({ method: 'POST', body: '{"settings":{"applyUpdates":true}}' }), res)
+  assert.equal(res.statusCode, 400)
+  assert.match(res.json().reason, /no profile/)
+  assert.equal(written, false)
 })
 
 test('sendJson writes a no-store JSON response', () => {

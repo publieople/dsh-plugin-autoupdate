@@ -21,6 +21,10 @@
    `pkg@1.2.3` 一律 400（否则又绕开年龄策略）。
 7. **Windows 上自己拼命令行再交给 cmd.exe。** Node 的 `shell: true` 不转义参数（DEP0190），
    cmd 会吃掉 `^`。走 `buildWindowsCommand()` + `quoteForCmd()`，别直接 `spawn(cmd, args, { shell: true })`。
+8. **定时器只跑人也会跑的那条命令。** 自动更新 = 快照 + `dsh plugin update`，**绝不** `add pkg@version`
+   （第 1 条在无人值守路径上同样成立）。锁定项与失败过的 `包@版本` 在「计划」阶段就被排除
+   （`planAutoApply` 返回的 `wanted` 才是可应用的集合），apply 只收 `{profile, profileDir, stamp}` ——
+   **要更新哪些包永远由 CLI 决定，插件不挑版本**（第 2 条）。
 
 ## 实测行为（别再踩）
 
@@ -44,6 +48,10 @@
   必须 `latest: true` 才能升。工具会主动报告这种情况。
 - `defineTool` 会把 `parameters` 归一化成 JSON Schema（`required: ['action']`），不是原来的 `required: true`。
   写测试断言时按归一化后的形状写。
+- `createAutoSupervisor().beat()` 在 `start()` 之前**恒返回 `{ skipped: 'stopped' }`**（不跑任何 check）。
+  写测试时要么先 `start()`，要么用一个「没跑就先 start」的包装（`test/auto.test.mjs` 的 `h.beat()` 就是干这个的）。
+- 定时检查用「每分钟心跳 + 重读设置」，不是固定 `setInterval` 链：这样页面上的开关**一拍内生效、不用重启宿主**；
+  定时器 `unref()`，不会拦住进程退出。
 
 ## 契约
 
@@ -69,6 +77,11 @@ window.__ModuleLoader__.load({ id: '<包名>', factory: (require) => { /* CJS �
   与离线回退，`en` 必须逐 key 对齐；slot 注册声明 `locale: NS`；语言切换靠 `ctx.locale.subscribe` 触发重渲染
   （组件在渲染期取文案，所以没有订阅就不会跟着换）。`test/client-bundle.test.mjs` 离线守这三条：
   键集合相等、代码里用到的 key 都在词典里、词典里没有死 key。
+- **`<profile>/.plugin-autoupdate.json` 是唯一的真源**（锁清单 + 自动更新的 `settings` + 上次运行 `auto` +
+  失败记忆 `failures` 四个字段共用一个文件）。所以 `writeState` 永远**整份写**（先 `readState` 再补未传字段），
+  经 `.tmp` + `renameSync`；想着"只改一个字段"去局部写，就会悄悄丢掉另一条路径写下的数据。
+- `POST /plugin-autoupdate/settings` **故意不要 `confirm`**：它不装代码、可逆，只写上面这个状态文件，
+  和 `lock`/`unlock` 同类；真正装代码的 `apply`/`rollback`/`install`/`restart` 才要 `confirm: true`。
 
 ## 开发
 

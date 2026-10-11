@@ -23,12 +23,28 @@ const TAB_UPDATES = 'updates'
 const TAB_INSTALLED = 'installed'
 const TAB_DISCOVER = 'discover'
 const TAB_LOCKED = 'locked'
+const TAB_AUTO = 'auto'
 const Q = String.fromCharCode(34)
+
+/**
+ * The schedules the page offers. Minutes on the wire, hours in front of the user -
+ * nobody wants to read 1440 next to a checkbox.
+ */
+const AUTO_INTERVALS = [0, 60, 180, 360, 720, 1440]
 
 type Row = { name: string; current: string; latest: string }
 type InstalledRow = { name: string; spec: string; source: string }
 type Lock = { name: string; version?: string | null; note?: string | null; lockedAt?: string }
-type Report = { profile: string; rows?: Row[]; lockedRows?: Row[]; locks?: Lock[]; installed?: InstalledRow[] }
+type AutoSettings = { checkOnStart: boolean; checkEveryMinutes: number; applyUpdates: boolean }
+type AutoRun = {
+  lastCheckAt?: string | null; lastCheckReason?: string | null; lastOffers?: number | null
+  lastApplyCode?: number | null; lastApplied?: string[] | null; lastSkipped?: { name: string; latest: string; at?: string }[] | null
+  lastError?: string | null; settings?: AutoSettings
+}
+type Report = {
+  profile: string; rows?: Row[]; lockedRows?: Row[]; locks?: Lock[]; installed?: InstalledRow[]
+  settings?: AutoSettings; auto?: AutoRun
+}
 type CatalogRow = {
   name: string; npm: string | null; owner: string | null; url: string | null; page: string | null
   category: string | null; description: { en?: string; zh?: string }; version: string | null
@@ -196,6 +212,9 @@ export function PluginUpdatesPage () {
   // those words, instead of reporting an empty catalog.
   const hostFeatures = (status && status.features) || []
   const hostTooOld = Boolean(status && status.ok) && !hostFeatures.includes('catalog')
+  // Same rule one feature later: a page that reloads against an older host process
+  // must offer the tab and then explain why the switches are not there yet.
+  const autoTooOld = Boolean(status && status.ok) && !hostFeatures.includes('settings')
 
   const run = async (fn: () => Promise<{ status: number; json: ActionResult | null }>, okText: string) => {
     setBusy(true); setError(''); setMessage('')
@@ -316,6 +335,16 @@ export function PluginUpdatesPage () {
     setBusy(false)
   }
 
+  const saveSettings = (profile: string, patch: Partial<AutoSettings>) => run(
+    () => post('/settings', { profiles: profile, settings: patch }),
+    t('auto.saved'),
+  )
+
+  const forgetFailures = (profile: string) => run(
+    () => post('/settings', { profiles: profile, settings: {}, clearFailures: true }),
+    t('auto.saved'),
+  )
+
   const selectedBlocked = busy || picked.length === 0
   const allBlocked = busy || updates.length === 0
 
@@ -357,7 +386,7 @@ export function PluginUpdatesPage () {
       disabled: catalogBusy,
       onClick: () => { void searchCatalog(query, category) },
     }, catalogBusy ? t('action.searching') : t('action.search')) : null,
-    tab === TAB_DISCOVER ? null : h('button', { style: { ...S.btn, ...(allBlocked ? S.btnOff : {}) }, disabled: allBlocked, onClick: exportCsv }, t('action.exportCsv')),
+    tab === TAB_DISCOVER || tab === TAB_AUTO ? null : h('button', { style: { ...S.btn, ...(allBlocked ? S.btnOff : {}) }, disabled: allBlocked, onClick: exportCsv }, t('action.exportCsv')),
   )
 
   return h('div', { style: S.page },
@@ -392,6 +421,7 @@ export function PluginUpdatesPage () {
       h('button', { style: { ...S.tab, ...(tab === TAB_DISCOVER ? S.tabOn : {}) }, onClick: () => setTab(TAB_DISCOVER) }, t('tab.discover')),
       h('button', { style: { ...S.tab, ...(tab === TAB_LOCKED ? S.tabOn : {}) }, onClick: () => setTab(TAB_LOCKED) },
         t('tab.locked') + (locks.length > 0 ? ' (' + locks.length + ')' : '')),
+      h('button', { style: { ...S.tab, ...(tab === TAB_AUTO ? S.tabOn : {}) }, onClick: () => setTab(TAB_AUTO) }, t('tab.auto')),
     ),
     toolbar,
     tab === TAB_UPDATES
@@ -405,7 +435,13 @@ export function PluginUpdatesPage () {
             onInstall: installOne,
             onRetry: () => { catalogTried.current = true; void searchCatalog(query, category) },
           })
-          : h(LockedTable, { rows: lockedRows, locks, onUnlock: unlockOne }),
+          : tab === TAB_AUTO
+            ? h(AutoPanel, {
+              reports, hostTooOld: autoTooOld, busy,
+              onSave: saveSettings,
+              onForget: forgetFailures,
+            })
+            : h(LockedTable, { rows: lockedRows, locks, onUnlock: unlockOne }),
     h('div', { style: S.note }, t('footer.note')),
   )
 }
@@ -569,6 +605,128 @@ export function PluginUpdatesIcon (props: any) {
     h('path', { d: 'M12 8.5v7' }),
     h('path', { d: 'M8.5 12.5 12 16l3.5-3.5' }),
   )
+}
+
+/**
+ * The scheduled-check tab. Everything here is a switch the host will read on its next
+ * heartbeat: turning a switch on does not restart anything, and it never picks a
+ * version - it only lets the host run the same \`dsh plugin update\` a human would.
+ *
+ * The draft is local so a half-finished edit is not written on every keystroke; it is
+ * re-synced whenever the host's stored settings actually change (compared as JSON, not
+ * by object identity - /status rebuilds these objects on every poll).
+ */
+function AutoPanel (props: any) {
+  const { reports, hostTooOld, busy, onSave, onForget } = props
+  if (hostTooOld) return h('div', { style: S.note }, t('auto.hostOld'))
+  if (!reports || reports.length === 0) return h('div', { style: S.note }, t('auto.noProfile'))
+  return h('div', null, reports.map((report: any) => h(AutoProfile, {
+    key: report.profile,
+    profile: report.profile,
+    settings: report.settings,
+    auto: report.auto,
+    busy,
+    onSave,
+    onForget,
+  })))
+}
+
+function AutoProfile (props: any) {
+  const { profile, settings, auto, busy, onSave, onForget } = props
+  const stored = settings || { checkOnStart: false, checkEveryMinutes: 0, applyUpdates: false }
+  const stamp = JSON.stringify(stored)
+
+  const [draft, setDraft] = useState<any>(stored)
+  const seen = useRef(stamp)
+  const [forgotten, setForgotten] = useState(false)
+  useEffect(() => {
+    if (seen.current === stamp) return
+    seen.current = stamp
+    setDraft(stored)
+    setForgotten(false)
+  }, [stamp, stored])
+
+  const dirty = JSON.stringify(draft) !== stamp
+  const run = auto || {}
+  const applied = Array.isArray(run.lastApplied) ? run.lastApplied : []
+  const skipped = Array.isArray(run.lastSkipped) ? run.lastSkipped : []
+  const hint = { ...S.note, margin: '2px 0 10px 22px', fontSize: '0.85em' }
+  const row = { display: 'flex', gap: '6px', alignItems: 'center', marginTop: '10px' }
+
+  return h('div', { style: { borderTop: '1px solid rgba(127,127,127,0.28)', paddingTop: '12px', marginTop: '16px' } },
+    h('div', { style: { ...S.mono, fontWeight: 600 } }, profile),
+
+    h('label', { style: row },
+      h('input', {
+        type: 'checkbox',
+        checked: draft.checkOnStart === true,
+        onChange: (event: any) => setDraft({ ...draft, checkOnStart: event.target.checked }),
+      }),
+      t('auto.checkOnStart'),
+    ),
+    h('div', { style: hint }, t('auto.checkOnStartHint')),
+
+    h('label', { style: row },
+      t('auto.interval'),
+      h('select', {
+        style: S.input,
+        value: String(draft.checkEveryMinutes),
+        onChange: (event: any) => setDraft({ ...draft, checkEveryMinutes: Number(event.target.value) }),
+      }, ...AUTO_INTERVALS.map((minutes) => h('option', { key: minutes, value: String(minutes) },
+        minutes === 0 ? t('auto.intervalOff') : t('auto.intervalHours', { hours: minutes / 60 })))),
+    ),
+
+    h('label', { style: row },
+      h('input', {
+        type: 'checkbox',
+        checked: draft.applyUpdates === true,
+        onChange: (event: any) => setDraft({ ...draft, applyUpdates: event.target.checked }),
+      }),
+      t('auto.applyUpdates'),
+    ),
+    h('div', { style: hint }, t('auto.applyUpdatesHint')),
+
+    h('button', {
+      style: { ...S.btn, ...S.btnPrimary, ...((!dirty || busy) ? S.btnOff : {}), marginTop: '6px' },
+      disabled: !dirty || busy,
+      onClick: () => { void onSave(profile, draft) },
+    }, t('action.save')),
+    h('div', { style: hint }, t('auto.lockedNote')),
+
+    h('div', { style: { ...S.note, marginTop: '12px' } },
+      run.lastCheckAt
+        ? t('auto.lastCheck', { at: formatWhen(run.lastCheckAt), reason: reasonLabel(run.lastCheckReason), offers: run.lastOffers || 0 })
+        : t('auto.never'),
+      applied.length > 0 ? h('div', null, t('auto.applied', { count: applied.length, list: applied.join(', ') })) : null,
+      skipped.length > 0 && !forgotten
+        ? h('div', null,
+          t('auto.skipped', { list: skipped.map((item: any) => item.name + '@' + item.latest).join(', ') }),
+          ' ',
+          h('button', {
+            style: S.btn,
+            disabled: busy,
+            onClick: () => { setForgotten(true); void onForget(profile) },
+          }, t('auto.clearFailures')),
+        )
+        : null,
+      run.lastError ? h('div', { style: S.err }, t('auto.lastError', { reason: run.lastError })) : null,
+    ),
+    h('div', { style: { ...S.note, marginTop: '10px' } }, t('auto.restartNote')),
+  )
+}
+
+/** An ISO stamp from the host, rendered in the reader's own time zone. */
+function formatWhen (value: any) {
+  const date = new Date(String(value || ''))
+  if (Number.isNaN(date.getTime())) return String(value || '')
+  try { return date.toLocaleString() } catch { return date.toISOString() }
+}
+
+/** The host stores a machine reason; the page shows a phrase. */
+function reasonLabel (reason: any) {
+  if (reason === 'start') return t('auto.reasonStart')
+  if (reason === 'interval') return t('auto.reasonInterval')
+  return t('auto.reasonFailed')
 }
 
 /**

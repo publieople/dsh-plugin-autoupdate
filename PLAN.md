@@ -9,8 +9,9 @@
 | M0 | 仓库与骨架（清单、cordis patch、CLI 契约、单测） | ✅ 已完成 |
 | M1 | host 侧真实组合验证（临时 profile 跑通 check/apply/rollback） | ✅ 已完成（25/25） |
 | M2 | 客户端页面（UniGetUI 式四视图） | ✅ v0.2.0：主栏页面 + 侧栏入口 + 刷新/重启 + 可用更新/已安装/发现/已锁定 + 中英本地化；仅剩 jsdom 挂载测试 |
-| M3 | 发布到 npm + 打 tag | ⬜ 待做 |
-| M4 | 提交进插件目录（别人能搜到） | ⬜ 待做 |
+| M2+ | 自动更新：定时检查 + 满足条件自己应用（用户 2026-10-11 拍板） | ✅ v0.3.0 |
+| M3 | 发布到 npm + 打 tag | ✅ 0.2.0 已发布（2026-10-10）；此后打 tag 自动发布，Trusted Publisher 已验证 |
+| M4 | 提交进插件目录（别人能搜到） | ⬜ 待做（条目已拟好，等确认开 PR） |
 
 ## M0 —— 已完成
 
@@ -88,6 +89,35 @@
 - ✅ 页面本地化（2026-10-09，第四轮，见下）
 - ⬜ jsdom 挂载测试（官方 `@deepseek-ai/dsh-client-test-runtime`）
 
+### 已完成：自动更新（2026-10-11，第五轮）
+
+用户原话（m00560）："对的, 就是定时检查, 满足条件的自己更新, 重启后生效无所谓, 正常电脑都会自己重启的,
+电脑重启的时候DSH桌面端肯定也重启了." —— 即"定时检查 + 自动应用"，不要求立刻生效。
+
+- **状态文件仍是唯一真源**：`<profile>/.plugin-autoupdate.json` 现在同时放锁清单、`settings`
+  （`checkOnStart` / `checkEveryMinutes` 0..10080 / `applyUpdates`）、`auto`（上次运行结果）与
+  `failures`（`包@版本` → 首次失败时间，最多 50 条）；写入走 tmp + rename，永远整份写，
+  因为四个字段共用一个文件，局部写会悄悄丢掉另一条路径的数据。
+- **`lib/auto.js`**：`checkDue({settings,auto,now,since,startupDone,startDelayMs})` 是纯函数
+  （reason ∈ disabled / grace / start / interval-off / not-due / interval）；`planAutoApply` 同样纯
+  （锁定行已被 `splitLocked` 移出，失败过的 `name@latest` 移进 `skipped`）；
+  `createAutoSupervisor` 用"心跳重读设置"而不是固定 interval 链 —— **页面改开关一拍内生效，不用重启宿主**；
+  全部协作者可注入，所以 `test/auto.test.mjs` 用假时钟 + 假 CLI + 真临时 profile 目录跑完 16 个用例。
+- **安全边界**：定时器只跑人也会跑的 `dsh plugin update`（绝不 `add pkg@版本`，否则会写
+  `minimumReleaseAgeExclude` 绕开年龄策略）；锁定项永不自动应用；失败的 `包@版本` 不重试
+  （换新版本才重试，「清除失败记忆」是逃生口）；apply 成功才 `pruneSnapshots`，`changed` 为空
+  （精确钉版本）记为 `nothing moved` 当作失败，避免每拍空转；`profiles()` 为空、check 抛错都不炸
+  （抛错也记 `lastCheckAt`/`lastError` 并标记本进程已跑过启动检查，缺 CLI 时不会每拍起进程）。
+- **宿主接口**：`ROUTE_FEATURES` 追加 `settings`（9 条）；`GET /status` 每条 report 增加
+  `settings` 与 `auto`；新增 `POST /settings`（同样信任围栏，但**不要 `confirm`**：不装代码、可逆，
+  与 lock/unlock 同类；`clearFailures: true` 顺带清失败记忆）；agent 工具加 `settings` 动作与
+  `checkOnStart`/`checkEveryMinutes`/`applyUpdates` 参数。
+- **页面**：第 5 个 tab「自动更新 / Auto-update」，每 profile 一块（两个复选 + 间隔下拉 + 保存 +
+  上次检查/已应用/跳过/错误 + 清除失败记忆）；草稿用 JSON 比对而不是对象身份重同步，避免轮询把没保存的编辑冲掉。
+- **测试**：`test/auto.test.mjs` 16 个用例；`test/http.test.mjs` features 断言改 9 条 +
+  `/settings` 的 403 / 405 / 400（无 profile）/ 200（先 clearFailures 再写）与 status 带 settings+auto。
+  全套 76/76（原 57 + 16 auto + 3 http）。
+
 ### 已完成：中英本地化（2026-10-09，第四轮）
 
 - 参考三份已装插件的实现（`@linxin666/dsh-update`、`@linxin666/dsh-client-ui-plugin-manager`、
@@ -126,11 +156,18 @@
 - 工具栏：重新加载 · 更新所选 · 全部更新 · `--latest` · 回滚 · 导出 CSV
 - 右上角：**刷新界面**（`location.reload()`）与**重启 DSH**（能力门禁：桌面宿主判为不支持并说明原因）
 
-## M3 —— 发布
+## M3 —— 发布 ✅（0.2.0 已发布，之后走 tag）
 
-1. 建 GitHub 仓库，把 `repository` / `homepage` / `bugs` 填回 `package.json`
-2. `npm publish`（已设 public access）
-3. 打 tag `v0.1.0`
+1. ~~建 GitHub 仓库，填 `repository` / `homepage` / `bugs`~~ —— 已完成（publieople/dsh-plugin-autoupdate）
+2. ~~`npm publish`~~ —— **0.2.0 于 2026-10-10 发布**（用户交互式 2FA 通过可见控制台窗口完成；
+   非 TTY 下 npm 直接抛 EOTP，见 `npm/lib/utils/auth.js` 的 otplease）。registry 上的 tarball 已逐文件核对
+   （19 个文件，`lib/client.js` SHA256 与仓库一致），并用全新 profile `npmtest` 装过、`--dump-config` 验证。
+3. **Trusted Publisher 已配好并验证**：用 `workflow_dispatch` 触发 `publish.yml`（run 38046722589），
+   测试步骤全绿、Publish 步骤报 `You cannot publish over the previously published versions: 0.2.0` ——
+   这个"版本冲突"而不是"未登录"证明 OIDC 换到了 token（`npm/lib/utils/oidc.js` 交换成功后才走到版本检查），
+   且副作用为零。**发布新版本从此只需**：改 `version` → `git tag vX.Y.Z && git push origin vX.Y.Z`。
+4. 注意：**绝不能给 0.2.0 补打 tag**（会重复发布同一版本而失败）；`0.0.0-stage` 是 npm 11 用 staged publish
+   建包留下的占位版本，可清理（要交互式 2FA）。
 
 ## M4 —— 进目录（能被搜到）
 
@@ -145,10 +182,14 @@
 ## 待你拍板
 
 1. ~~GitHub 账号/仓库名~~ —— 已用 gh CLI（账号 `publieople`）建好并推送
-2. **npm 发布者**：待定 —— 你在 npmjs.com 配 Trusted Publisher（我打 tag 自动发），还是你本地 `npm publish`
+2. ~~npm 发布方式~~ —— 已定：先本地发 0.2.0 让包存在，再配 Trusted Publisher；已配好并用 0.2.0 验证通过
 3. ~~包名~~ —— `dsh-plugin-autoupdate` 已确认未被占用
 4. **LICENSE 版权署名** —— 现为 `publieople`，要改说一声
-5. **要不要现在发 0.2.0** —— 代码已过真实组合验证（42/42 + 14/14 live + CI 绿），可以直接发；也可以先把发现视图做完一起发
+5. ~~要不要现在发 0.2.0~~ —— 已发布（2026-10-10）
+6. **M4 目录 PR** —— 条目已按 awesome-dsh-plugin 的 contributing.md 拟好（`data/plugins/publieople__dsh-plugin-autoupdate.yml`，
+   category 选 `market`，中英描述各一句），等一句"开吧"
+7. **桌面版「重启 DSH」** —— 用户 2026-10-09 已否决外部重启助手（"外部的重启那没必要"）；按钮保持置灰 + 说明原因
+8. **待清理**：npm 上的 `0.0.0-stage` 是否 unpublish；CI 里那个红的 run 38046722589（TP 验证留下的证据）是否删
 
 ## 仓库规范（对齐生态惯例）
 

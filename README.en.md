@@ -32,7 +32,7 @@ starts - refreshing the page only swaps the browser half.
 ## Use it as a page: "插件更新" (Plugin updates)
 
 The sidebar gains an icon; it opens a full main-column page next to the conversation, with
-four tabs:
+five tabs:
 
 | Tab | Contents |
 |---|---|
@@ -40,6 +40,7 @@ four tabs:
 | 已安装 / Installed | the dependencies recorded in each profile, their ranges and sources, plus "roll back the last update" |
 | 发现 / Discover | the plugin market's official catalog: search, filter by category, install in one click (below) |
 | 已锁定 / Locked | packages whose updates are no longer offered, with an unlock button |
+| 自动更新 / Auto-update | scheduled checks, and updates that apply themselves once the conditions are met (below); one block of switches and last-run facts per profile |
 
 Toolbar: reload · update selected · update all · ignore ranges (`--latest`) · rollback · export CSV.
 Two buttons in the top right:
@@ -59,6 +60,7 @@ Two buttons in the top right:
 | `check` (default) | lists updatable plugins per profile (exactly what `pnpm outdated` reports) |
 | `apply` | snapshots the profile, then updates, reporting which ranges moved |
 | `rollback` | restores the newest snapshot (or the one named by `snapshot=`) and reinstalls |
+| `settings` | reads or writes a profile's auto-update switches (`checkOnStart` / `checkEveryMinutes` / `applyUpdates`) and can forget past failures |
 | `lock` / `unlock` | stop offering updates for a package / offer them again |
 
 - `profiles`: comma-separated profile names; defaults to the profile this instance runs
@@ -97,20 +99,45 @@ Two buttons in the top right:
   the resolution: the package still updates within the range you recorded.
 - A locked package moves from "Updates" to "Locked" - the offer is hidden, the fact is not.
 
+## Auto-update (scheduled checks)
+
+"Check on a schedule, and update itself when the conditions are met" - the switches live under the
+自动更新 tab, are stored per profile in `<profile>/.plugin-autoupdate.json`, and the host **re-reads
+them every minute**, so flipping one takes effect within a beat instead of needing a restart.
+
+| Switch | Meaning |
+|---|---|
+| Check once after DSH starts | one check about a minute after the host starts (so it does not race startup), once per process |
+| Check on a schedule | every 1 / 3 / 6 / 12 / 24 hours; off means never |
+| Apply updates it finds | snapshot first, then run `dsh plugin update` (identical to doing it by hand) |
+
+Two hard boundaries:
+
+- **A locked plugin is never auto-applied** - locked rows leave the plan before anything can be applied;
+- **a `package@version` that failed is not retried in a loop** (remembered in the same state file,
+  the newest 50). A newer version is a fresh attempt, and "Forget past failures" retries at once.
+
+Auto-apply still only runs `dsh plugin update` - it **never touches `add pkg@version`** - so pnpm's
+minimum-release-age policy and the ranges recorded in the profile keep deciding. An updated host
+plugin loads on the next DSH start; not restarting now is fine.
+
 ## HTTP surface (used by the page)
 
-The page talks to eight exact routes on the host:
+The page talks to nine exact routes on the host:
 
 ```
 GET  /plugin-autoupdate/status     GET  /plugin-autoupdate/catalog
 POST /plugin-autoupdate/apply      POST /plugin-autoupdate/rollback
 POST /plugin-autoupdate/install    POST /plugin-autoupdate/restart
 POST /plugin-autoupdate/lock       POST /plugin-autoupdate/unlock
+POST /plugin-autoupdate/settings
 ```
 
 - Reads (`status` / `catalog`) are unfenced, so deployments reached by a name keep working.
 - Writes require a loopback `Host` or one you declared
-  (`PLUGIN_AUTOUPDATE_TRUSTED_HOSTS=host1,host2`), plus `confirm: true` in the body.
+  (`PLUGIN_AUTOUPDATE_TRUSTED_HOSTS=host1,host2`). `apply` / `rollback` / `install` / `restart`
+  also require `confirm: true` in the body; `lock` / `unlock` / `settings` do not - they install
+  no code, they are reversible, and all they write is this plugin's own state file.
 - `/status` reports `features` (the routes this build registered) and `version`: the browser
   half is re-read from disk on every page load while the host half only loads at process start,
   so the page compares the two and says "the host plugin is older - quit DSH and reopen".
@@ -131,7 +158,10 @@ Each of these is deliberate:
 5. **It writes only inside the profile directory** (`$DSH_HOME/profiles/<name>`) and its own
    cache under `$DSH_HOME`: no user code, no agent configuration.
 6. **Discover installs only catalog packages, and never with a version.**
-7. **On Windows it builds the command line itself** before handing it to cmd.exe - Node's
+7. **The timer only runs the command a human would run.** Auto-apply means snapshot +
+   `dsh plugin update`, never `add pkg@version`; locked packages and versions that already failed
+   leave the plan before it can apply anything.
+8. **On Windows it builds the command line itself** before handing it to cmd.exe - Node's
    `shell: true` does not escape arguments (DEP0190) and cmd.exe swallows `^`.
 
 ## What it is not

@@ -28,7 +28,7 @@ dsh plugin --profile <你的 profile> add dsh-plugin-autoupdate
 
 ## 用法一：页面「插件更新」
 
-装好后侧栏多一个图标，打开是与对话页同级的主栏整页，四个 tab：
+装好后侧栏多一个图标，打开是与对话页同级的主栏整页，五个 tab：
 
 | Tab | 内容 |
 |---|---|
@@ -36,6 +36,7 @@ dsh plugin --profile <你的 profile> add dsh-plugin-autoupdate
 | 已安装 | profile 里记录的依赖、版本范围与来源；「回滚最近一次更新」 |
 | 发现 | 插件市场的官方目录，可搜索、按分类筛选、一键安装（见下） |
 | 已锁定 | 被锁定的包，可解锁 |
+| 自动更新 | 定时检查 + 满足条件就自己更新（见下）；每个 profile 一组开关与上次运行结果 |
 
 工具栏：重新加载 · 更新所选 · 全部更新 · 忽略版本范围（`--latest`） · 回滚 · 导出 CSV。
 右上角两个按钮：
@@ -53,6 +54,7 @@ dsh plugin --profile <你的 profile> add dsh-plugin-autoupdate
 | `apply` | 先快照 profile，再执行更新，报告哪些范围动了 |
 | `rollback` | 恢复最近的快照（或 `snapshot=` 指定的那份）并重装 |
 | `lock` / `unlock` | 不再提示某个包的更新 / 恢复提示 |
+| `settings` | 读/写某个 profile 的自动更新开关（`checkOnStart` / `checkEveryMinutes` / `applyUpdates`），可顺带清空失败记忆 |
 
 - `profiles`：逗号分隔的 profile 名，默认是当前实例运行的 profile
 - `latest`：等价于 `--latest`，忽略记录的 semver 范围来选版本 —— **仍然受发布时长策略约束**
@@ -83,20 +85,43 @@ dsh plugin --profile <你的 profile> add dsh-plugin-autoupdate
 - **不碰 manifest、不钉版本。** 锁的是提示，不是解析结果：那个包仍会按你记录的范围正常升级。
 - 锁定后它从「可用更新」移到「已锁定」—— 抑制提示，但不隐藏事实。
 
+## 自动更新（定时检查）
+
+「定时检查，满足条件就自己更新」—— 开关在页面的「自动更新」tab，按 profile 保存到
+`<profile>/.plugin-autoupdate.json`，宿主**每一分钟重读一次**设置，所以在页面上改完一拍内生效，不需要重启。
+
+| 开关 | 含义 |
+|---|---|
+| DSH 启动后检查一次 | 宿主启动约 1 分钟后跑一次检查（避开启动开销），每个进程只跑一次 |
+| 定时检查 | 每 1 / 3 / 6 / 12 / 24 小时检查一次；关闭 = 不查 |
+| 发现更新就自动应用 | 打开后，检查发现可更新项就先快照、再跑 `dsh plugin update`（与手动逐字一致） |
+
+两条硬边界：
+
+- **被锁定的插件永远不会被自动更新**，锁定的行在计划阶段就被移出；
+- **失败过的 `包@版本` 不会反复重试**（记在同一个状态文件的 `failures` 里，最多 50 条）；
+  换到新版本会重新尝试，也可以点「清除失败记忆」立刻重试。
+
+自动应用仍然只走 `dsh plugin update`——**不碰 `add pkg@版本`**，所以 pnpm 的最小发布时长策略
+和 profile 里记录的 semver 范围照旧说了算。更新后需要重启 DSH 才生效：不重启也没关系，
+宿主插件在下次进程启动时加载。
+
 ## HTTP 接口（页面用）
 
-页面走宿主上 8 条精确路由：
+页面走宿主上 9 条精确路由：
 
 ```
 GET  /plugin-autoupdate/status     GET  /plugin-autoupdate/catalog
 POST /plugin-autoupdate/apply      POST /plugin-autoupdate/rollback
 POST /plugin-autoupdate/install    POST /plugin-autoupdate/restart
 POST /plugin-autoupdate/lock       POST /plugin-autoupdate/unlock
+POST /plugin-autoupdate/settings
 ```
 
 - 读（`status` / `catalog`）不设栅栏 —— 用名字访问的部署也必须能用。
-- 写要求 `Host` 是 loopback 或你声明的 authority（`PLUGIN_AUTOUPDATE_TRUSTED_HOSTS=host1,host2`），
-  并且请求体带 `confirm: true`。
+- 写要求 `Host` 是 loopback 或你声明的 authority（`PLUGIN_AUTOUPDATE_TRUSTED_HOSTS=host1,host2`）。
+  `apply` / `rollback` / `install` / `restart` 还要请求体带 `confirm: true`；
+  `lock` / `unlock` / `settings` 不需要 —— 它们不装代码、可逆，只是写本插件自己的状态文件。
 - `/status` 会回传 `features`（本构建注册的路由）与 `version`：浏览器那一半每次刷新都从磁盘重读，
   宿主那一半只在进程启动时加载，页面靠这个比对，发现宿主是旧版本时直说「退出 DSH 再重开」。
 
@@ -113,7 +138,9 @@ POST /plugin-autoupdate/lock       POST /plugin-autoupdate/unlock
 5. **只写 profile 目录**（`$DSH_HOME/profiles/<name>`）与 `$DSH_HOME` 下自己的目录缓存，
    不碰用户代码、不碰 agent 配置。
 6. **「发现」只能装目录里的包，且永远不带版本。**
-7. **Windows 上自己拼命令行**再交给 cmd.exe —— Node 的 `shell: true` 不转义参数（DEP0190），
+7. **定时器只跑人也会跑的那条命令。** 自动应用 = 快照 + `dsh plugin update`，绝不 `add pkg@版本`；
+   锁定项与失败过的版本在计划阶段就被排除。
+8. **Windows 上自己拼命令行**再交给 cmd.exe —— Node 的 `shell: true` 不转义参数（DEP0190），
    cmd 会把 `^` 吃掉。
 
 ## 它不是什么
