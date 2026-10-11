@@ -11,7 +11,7 @@
 | M2 | 客户端页面（UniGetUI 式四视图） | ✅ v0.2.0：主栏页面 + 侧栏入口 + 刷新/重启 + 可用更新/已安装/发现/已锁定 + 中英本地化；仅剩 jsdom 挂载测试 |
 | M2+ | 自动更新：定时检查 + 满足条件自己应用（用户 2026-10-11 拍板） | ✅ v0.3.0 |
 | M3 | 发布到 npm + 打 tag | ✅ 0.2.0 已发布（2026-10-10）；此后打 tag 自动发布，Trusted Publisher 已验证 |
-| M4 | 提交进插件目录（别人能搜到） | 🔄 已开 PR [#7099](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/7099)（2026-10-11，等合并）；dsh.works / dsh.so 未提交 |
+| M4 | 提交进插件目录（别人能搜到） | 🔄 已开 PR [#7099](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/7099)（2026-10-11，等合并）；dsh.works / dsh.so 规则已摸清（2026-10-11），未提交 |
 
 ## M0 —— 已完成
 
@@ -89,6 +89,20 @@
 - ✅ 页面本地化（2026-10-09，第四轮，见下）
 - ⬜ jsdom 挂载测试（官方 `@deepseek-ai/dsh-client-test-runtime`）
 
+### 已完成：npm 占位版本清理（2026-10-11，第七轮）
+
+- 删掉 npm 上的 `dsh-plugin-autoupdate@0.0.0-stage`（npm 11 用 staged publish 建包时留下的 `"stub": true` 占位条目）。
+- 卡住的两个原因：①`~/.npmrc` 里存着的 web 登录令牌早已失效（`npm whoami` → `401 Unauthorized`），
+  此前所有写操作其实都没带有效身份；②`libnpmpublish/lib/unpublish.js:110-116` 把 `E404` 静默当作删除成功
+  （`catch (err) { if (err.code !== 'E404') throw err; return true }`），所以 CLI 打印成功、registry 却没动。
+- 真正的绊脚石是 2FA：非 TTY 下 npm 直接抛 EOTP（`npm/lib/utils/auth.js` 的 `otplease`），
+  绕法还是可见控制台窗口（`Start-Process cmd.exe /k`）让用户在浏览器过 Windows Hello；
+  一次挑战约 30 秒不批就报 `403 Forbidden - GET https://registry.npmjs.org/-/v1/done?authId=…`。
+- 成功那次的 npm debug 日志：`GET packument?write=true 200` → `PUT …/-rev/4-ad21e38f36b95dc582781bfd591b07b8 200`
+  → 取到新 rev → `DELETE …/-/dsh-plugin-autoupdate-0.0.0-stage.tgz/-rev/5-0246fe0d243f86c2b19189afff3ae110 200`，`exit 0`。
+- 复核（两条独立路径）：registry packument `versions = 0.2.0, 0.3.0, 0.3.1`、`dist-tags = {latest: 0.3.1}`、
+  `_rev = 5-0246fe0d…`；`npm view versions` 同上；`0.0.0-stage` 的 tarball 现在 404，`0.3.1` 的 tarball 仍是 200。
+- 教训：**轮询 registry 别用 `npm view`** —— npm 的 `logs-max:10` 会把刚产生的 debug 日志挤掉，出事后看不到现场。
 ### 已完成：投稿 awesome-dsh-plugin（2026-10-11，第六轮）
 
 用户原话（m00829）："提交进 awesome-dsh-plugin 目录 开吧"。
@@ -187,7 +201,7 @@
    这个"版本冲突"而不是"未登录"证明 OIDC 换到了 token（`npm/lib/utils/oidc.js` 交换成功后才走到版本检查），
    且副作用为零。**发布新版本从此只需**：改 `version` → `git tag vX.Y.Z && git push origin vX.Y.Z`。
 4. 注意：**绝不能给 0.2.0 补打 tag**（会重复发布同一版本而失败）；`0.0.0-stage` 是 npm 11 用 staged publish
-   建包留下的占位版本，可清理（要交互式 2FA）。
+   建包留下的占位版本，**已于 2026-10-11 删除**（见上面第七轮）。
 
 ## M4 —— 进目录（能被搜到）
 
@@ -209,7 +223,7 @@
 6. **M4 目录 PR** —— 条目已按 awesome-dsh-plugin 的 contributing.md 拟好（`data/plugins/publieople__dsh-plugin-autoupdate.yml`，
    category 选 `market`，中英描述各一句），等一句"开吧"
 7. **桌面版「重启 DSH」** —— 用户 2026-10-09 已否决外部重启助手（"外部的重启那没必要"）；按钮保持置灰 + 说明原因
-8. **待清理**：npm 上的 `0.0.0-stage` 是否 unpublish；CI 里那个红的 run 38046722589（TP 验证留下的证据）是否删
+8. **待清理**：~~npm 上的 `0.0.0-stage` 是否 unpublish~~ —— **已删**（2026-10-11）；只剩 CI 里那个红的 run 38046722589（TP 验证留下的证据）是否删
 
 ## 仓库规范（对齐生态惯例）
 
