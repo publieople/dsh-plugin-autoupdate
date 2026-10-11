@@ -114,6 +114,10 @@
   `checkOnStart`/`checkEveryMinutes`/`applyUpdates` 参数。
 - **页面**：第 5 个 tab「自动更新 / Auto-update」，每 profile 一块（两个复选 + 间隔下拉 + 保存 +
   上次检查/已应用/跳过/错误 + 清除失败记忆）；草稿用 JSON 比对而不是对象身份重同步，避免轮询把没保存的编辑冲掉。
+- **发布与装盘（2026-10-11）**：`v0.3.0` tag 驱动 `publish.yml`（run 38101086231）全绿发布 ——
+  Trusted Publisher 真生效，带 sigstore provenance（transparency log index 3196976190），
+  20 个文件 / 84.8 kB；装进 desktop profile 后逐文件 SHA256 与仓库一致（含新增的 `lib/auto.js`）。
+  桌面 profile 的自动更新已打开：启动后检查一次 + 每 6 小时 + 发现更新就自动应用。
 - **测试**：`test/auto.test.mjs` 16 个用例；`test/http.test.mjs` features 断言改 9 条 +
   `/settings` 的 403 / 405 / 400（无 profile）/ 200（先 clearFailures 再写）与 status 带 settings+auto。
   全套 76/76（原 57 + 16 auto + 3 http）。
