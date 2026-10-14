@@ -32,13 +32,14 @@ const Q = String.fromCharCode(34)
  */
 const AUTO_INTERVALS = [0, 60, 180, 360, 720, 1440]
 
-type Row = { name: string; current: string; latest: string }
+type Row = { name: string; current: string; latest: string; wanted?: string; outOfRange?: boolean }
 type InstalledRow = { name: string; spec: string; source: string }
 type Lock = { name: string; version?: string | null; note?: string | null; lockedAt?: string }
 type AutoSettings = { checkOnStart: boolean; checkEveryMinutes: number; applyUpdates: boolean }
 type AutoRun = {
   lastCheckAt?: string | null; lastCheckReason?: string | null; lastOffers?: number | null
   lastApplyCode?: number | null; lastApplied?: string[] | null; lastSkipped?: { name: string; latest: string; at?: string }[] | null
+  lastRangeSkipped?: string[] | null
   lastError?: string | null; settings?: AutoSettings
 }
 type Report = {
@@ -215,6 +216,9 @@ export function PluginUpdatesPage () {
   // Same rule one feature later: a page that reloads against an older host process
   // must offer the tab and then explain why the switches are not there yet.
   const autoTooOld = Boolean(status && status.ok) && !hostFeatures.includes('settings')
+  // One feature later again: a host process that predates the out-of-range verdict
+  // cannot mark a single row, so the page says so rather than showing nothing.
+  const rangeTooOld = Boolean(status && status.ok) && !hostFeatures.includes('outOfRange')
 
   const run = async (fn: () => Promise<{ status: number; json: ActionResult | null }>, okText: string) => {
     setBusy(true); setError(''); setMessage('')
@@ -235,10 +239,10 @@ export function PluginUpdatesPage () {
   )
 
   const exportCsv = () => {
-    const rows: string[][] = [[t('col.profile'), t('col.plugin'), t('col.current'), t('col.latest'), t('col.source')]]
+    const rows: string[][] = [[t('col.profile'), t('col.plugin'), t('col.current'), t('col.latest'), t('col.source'), t('col.note')]]
     for (const row of updates) {
       const match = installed.find((item) => item.profile === row.profile && item.name === row.name)
-      rows.push([row.profile, row.name, row.current, row.latest, match ? match.source : 'npm'])
+      rows.push([row.profile, row.name, row.current, row.latest, match ? match.source : 'npm', row.outOfRange === true ? t('badge.outOfRange') : ''])
     }
     download('dsh-plugin-updates.csv', toCsv(rows))
   }
@@ -425,7 +429,7 @@ export function PluginUpdatesPage () {
     ),
     toolbar,
     tab === TAB_UPDATES
-      ? h(UpdateTable, { updates, installed, selected, setSelected, onLock: lockOne })
+      ? h(UpdateTable, { updates, installed, selected, setSelected, onLock: lockOne, rangeTooOld })
       : tab === TAB_INSTALLED
         ? h(InstalledTable, { installed })
         : tab === TAB_DISCOVER
@@ -447,15 +451,19 @@ export function PluginUpdatesPage () {
 }
 
 function UpdateTable (props: any) {
-  const { updates, installed, selected, setSelected } = props
+  const { updates, installed, selected, setSelected, rangeTooOld } = props
   if (updates.length === 0) return h('div', { style: S.note }, t('empty.updates'))
+  // Rows whose new version the recorded range does not admit: `dsh plugin update` runs,
+  // exits 0 and installs nothing. Until this existed "Update all" simply looked broken
+  // (the user reported exactly that on 2026-10-14, with three rows sitting on the page).
+  const outOfRange = updates.filter((row: any) => row.outOfRange === true)
   const allOn = updates.every((row: any) => selected[row.profile + '/' + row.name])
   const toggleAll = () => {
     const next: Record<string, boolean> = {}
     if (!allOn) for (const row of updates) next[row.profile + '/' + row.name] = true
     setSelected(next)
   }
-  return h('table', { style: S.table },
+  const table = h('table', { style: S.table },
     h('thead', null, h('tr', null,
       h('th', { style: { ...S.th, width: '28px' } }, h('input', { type: 'checkbox', checked: allOn, onChange: toggleAll })),
       h('th', { style: S.th }, t('col.plugin')),
@@ -477,7 +485,12 @@ function UpdateTable (props: any) {
         h('td', { style: { ...S.td, ...S.mono } }, row.name),
         h('td', { style: S.td }, row.profile),
         h('td', { style: { ...S.td, ...S.mono } }, row.current),
-        h('td', { style: { ...S.td, ...S.mono } }, row.latest),
+        h('td', { style: { ...S.td, ...S.mono } },
+          row.latest,
+          row.outOfRange === true
+            ? h('span', { style: { ...S.badge, ...S.badgeWarn }, title: t('badge.outOfRangeHint') }, ' ' + t('badge.outOfRange'))
+            : null,
+        ),
         h('td', { style: { ...S.td, ...S.dim } }, match ? match.source : 'npm'),
         h('td', { style: S.td }, h('button', {
           style: S.btn,
@@ -486,6 +499,18 @@ function UpdateTable (props: any) {
         }, t('action.lock'))),
       )
     })),
+  )
+
+  // The banner comes first: a page that lists rows "Update all" cannot move has to say why.
+  return h('div', null,
+    outOfRange.length > 0
+      ? h('div', { style: S.banner },
+        t('banner.outOfRange', { count: outOfRange.length }),
+        h('br'),
+        t('banner.outOfRangeHint'))
+      : null,
+    rangeTooOld ? h('div', { style: S.banner }, t('banner.rangeOld')) : null,
+    table,
   )
 }
 
@@ -650,6 +675,7 @@ function AutoProfile (props: any) {
   const run = auto || {}
   const applied = Array.isArray(run.lastApplied) ? run.lastApplied : []
   const skipped = Array.isArray(run.lastSkipped) ? run.lastSkipped : []
+  const rangeSkipped = Array.isArray(run.lastRangeSkipped) ? run.lastRangeSkipped : []
   const hint = { ...S.note, margin: '2px 0 10px 22px', fontSize: '0.85em' }
   const row = { display: 'flex', gap: '6px', alignItems: 'center', marginTop: '10px' }
 
@@ -708,6 +734,9 @@ function AutoProfile (props: any) {
             onClick: () => { setForgotten(true); void onForget(profile) },
           }, t('auto.clearFailures')),
         )
+        : null,
+      rangeSkipped.length > 0
+        ? h('div', null, t('auto.outOfRangeSkipped', { list: rangeSkipped.join(', ') }))
         : null,
       run.lastError ? h('div', { style: S.err }, t('auto.lastError', { reason: run.lastError })) : null,
     ),

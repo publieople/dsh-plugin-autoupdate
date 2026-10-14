@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseOutdated } from '../lib/outdated.js'
+import { checkProfile, parseOutdated, parseOutdatedJson } from '../lib/outdated.js'
 import { diffDeps } from '../lib/apply.js'
 
 const BAR = String.fromCharCode(0x2502)
@@ -45,4 +45,44 @@ test('diffDeps reports upgrades, additions and removals', () => {
 test('empty or garbage input yields no rows', () => {
   assert.deepEqual(parseOutdated(''), [])
   assert.deepEqual(parseOutdated('no table here'), [])
+})
+
+test('parseOutdatedJson reads the resolver verdict and flags rows an update cannot move', () => {
+  // Real shape of pnpm outdated --json (measured 2026-10-14 on the three rows the user
+  // reported): wanted === current means the newer release sits outside the recorded range.
+  const text = [
+    'ok Lockfile passes supply-chain policies (verified 4m ago)',
+    JSON.stringify({
+      'dsh-better-sidebar': { current: '0.24.1', latest: '0.26.0', wanted: '0.24.1', dependencyType: 'prod' },
+      'dsh-other': { current: '1.0.0', latest: '1.2.0', wanted: '1.2.0', dependencyType: 'prod' }
+    })
+  ].join('\n')
+  assert.deepEqual(parseOutdatedJson(text), [
+    { name: 'dsh-better-sidebar', current: '0.24.1', latest: '0.26.0', wanted: '0.24.1', outOfRange: true },
+    { name: 'dsh-other', current: '1.0.0', latest: '1.2.0', wanted: '1.2.0', outOfRange: false }
+  ])
+})
+
+test('parseOutdatedJson says null when there is no JSON, and [] when the answer is empty', () => {
+  assert.equal(parseOutdatedJson('| dsh-a | 1.0.0 | 1.0.1 |'), null)
+  assert.equal(parseOutdatedJson(''), null)
+  assert.equal(parseOutdatedJson('{'), null)
+  assert.deepEqual(parseOutdatedJson('{}'), [])
+})
+
+test('checkProfile asks for --json and keeps the table parser as the fallback', async () => {
+  // wanted only exists in the JSON form - it is the whole reason this flag is passed.
+  const calls = []
+  const jsonRun = async (cli, args) => {
+    calls.push(args)
+    return { code: 1, stdout: JSON.stringify({ 'dsh-a': { current: '1.0.0', latest: '1.1.0', wanted: '1.1.0' } }), stderr: '' }
+  }
+  const fromJson = await checkProfile({ cli: 'dsh', profile: 'p', run: jsonRun })
+  assert.deepEqual(calls[0], ['plugin', '--profile', 'p', 'outdated', '--json'])
+  assert.deepEqual(fromJson.rows, [{ name: 'dsh-a', current: '1.0.0', latest: '1.1.0', wanted: '1.1.0', outOfRange: false }])
+
+  // A CLI that answers with the table instead still works; those rows carry no verdict.
+  const tableRun = async () => ({ code: 1, stdout: '| dsh-a | 1.0.0 | 1.0.1 |', stderr: '' })
+  const fromTable = await checkProfile({ cli: 'dsh', profile: 'p', run: tableRun })
+  assert.deepEqual(fromTable.rows, [{ name: 'dsh-a', current: '1.0.0', latest: '1.0.1' }])
 })

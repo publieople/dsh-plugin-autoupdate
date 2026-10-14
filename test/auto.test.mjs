@@ -77,6 +77,24 @@ test('planAutoApply never applies a locked row, a failed pair, or anything witho
   assert.equal(planAutoApply({ settings: { applyUpdates: true }, rows: [{ name: 'a', latest: '2' }], failures }).apply, false)
 })
 
+test('planAutoApply never auto-applies an out-of-range row, and never calls it a failure', () => {
+  // 2026-10-14: three such rows sat on the page, the timer kept recording them as failed
+  // attempts, and "Update all" looked broken. update cannot move them at all - the
+  // profile range already decided - so the timer leaves them to the human.
+  const rows = [
+    { name: 'dsh-better-sidebar', current: '0.24.1', latest: '0.26.0', wanted: '0.24.1', outOfRange: true },
+    { name: 'dsh-other', current: '1.0.0', latest: '1.1.0', wanted: '1.1.0', outOfRange: false }
+  ]
+  const plan = planAutoApply({ settings: { applyUpdates: true }, rows, failures: {} })
+  assert.deepEqual(plan.wanted.map((row) => row.name), ['dsh-other'])
+  assert.deepEqual(plan.skipped, [{ name: 'dsh-better-sidebar', latest: '0.26.0', reason: 'out-of-range' }])
+
+  // ...and with nothing left to apply the timer does not even start a CLI run.
+  const onlyOutOfRange = planAutoApply({ settings: { applyUpdates: true }, rows: [rows[0]], failures: {} })
+  assert.equal(onlyOutOfRange.apply, false)
+  assert.deepEqual(onlyOutOfRange.wanted, [])
+})
+
 test('stampOf is the 14 digits the snapshot directory and the CLI runs share', () => {
   assert.equal(stampOf(new Date('2026-10-11T01:02:03.456Z')), '20261011010203')
 })

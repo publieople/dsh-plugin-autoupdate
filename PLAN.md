@@ -11,6 +11,7 @@
 | M2 | 客户端页面（UniGetUI 式四视图） | ✅ v0.2.0：主栏页面 + 侧栏入口 + 刷新/重启 + 可用更新/已安装/发现/已锁定 + 中英本地化；仅剩 jsdom 挂载测试 |
 | M2+ | 自动更新：定时检查 + 满足条件自己应用（用户 2026-10-11 拍板） | ✅ v0.3.0 |
 | M3 | 发布到 npm + 打 tag | ✅ 0.2.0 已发布（2026-10-10）；此后打 tag 自动发布，Trusted Publisher 已验证 |
+| M2+ | 「更新全部」看着没反应：新版本超出记录范围时在页面上标出来（用户 2026-10-14 报告） | ✅ v0.3.2 |
 | M4 | 提交进插件目录（别人能搜到） | 🔄 已开 PR [#7099](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/7099)（2026-10-11，等合并）；dsh.works / dsh.so 规则已摸清（2026-10-11），未提交 |
 
 ## M0 —— 已完成
@@ -103,6 +104,29 @@
 - 复核（两条独立路径）：registry packument `versions = 0.2.0, 0.3.0, 0.3.1`、`dist-tags = {latest: 0.3.1}`、
   `_rev = 5-0246fe0d…`；`npm view versions` 同上；`0.0.0-stage` 的 tarball 现在 404，`0.3.1` 的 tarball 仍是 200。
 - 教训：**轮询 registry 别用 `npm view`** —— npm 的 `logs-max:10` 会把刚产生的 debug 日志挤掉，出事后看不到现场。
+### 已完成：范围外提示（2026-10-14，第八轮）
+
+用户原话（m01404）："我现在点了更新全部, 更新完点了刷新页面那三个要更新的插件还是没更新。"
+随后（m01518）："那插件页面里都没显示, 你在插件更新的那个页面里提示一下"。
+
+- 根因：三行（dsh-better-sidebar 0.24.1→0.25.0、dsh-context 0.66.1→0.69.1、dsh-whale-widget 0.3.18→0.4.2）
+  的 specifier 是 `^0.24.1` / `^0.66.1` / `^0.3.18`，0.x 的 caret 只放行同 minor（0.24.x 等），
+  registry 上是 0.26.0 / 0.70.0 / 0.4.2 —— 全部越界。实测 `pnpm outdated --json` 三个都是 `wanted === current`、
+  `pnpm outdated --compatible` 输出为空、手动 `dsh plugin update` exit 0 且无 `+` 行：
+  「更新全部」是空操作，不是坏掉。快照 `.plugin-backup-auto-20261014075438` 证明 apply 确实走到了 CLI 那一步。
+- 判定口径仍然交给 CLI：`checkProfile` 改跑 `dsh plugin --profile X outdated --json`（`--json` 由 CLI 透传给 pnpm），
+  新解析器 `parseOutdatedJson` 取 `wanted`：`wanted === current && latest !== current` → 该行 `outOfRange: true`。
+  没有 JSON（更老的 CLI）就回落到原来的表格解析 `parseOutdated`，两种行形状都留着。**没有自己实现 semver。**
+- 页面（`src/client/index.tsx` + `src/client/locales.ts`，键 zh/en 对齐）：可用更新 tab 顶部横幅说明
+  「有 N 个新版本超出记录范围，pnpm update 不会装」以及怎么跨（勾 `--latest`）；每行「新版本」列加「范围外」徽标
+  （`S.badgeWarn`）带悬浮说明；CSV 多一列「说明」。`ROUTE_FEATURES` 增加 `outOfRange`，宿主进程还是旧构建时
+  页面直接说「完全退出 DSH 再重开」（照 2026-10-09 定下的规矩，避免又一次「界面新、宿主旧」的静默失败）。
+- 自动更新（`lib/auto.js`）：`planAutoApply` 把范围外的行按 `out-of-range` 跳过并**不再写进失败记忆**
+  （它们不是失败，是 profile 自己的决定），auto tab 用单独一行 `auto.outOfRangeSkipped` 说明；
+  当可应用的集合为空时连 CLI 都不启动。
+- 验收：`npm test` 80/80（新增 4 条：JSON 判定与 `outOfRange`、无 JSON 回落、`--json` 参数、
+  `planAutoApply` 跳过范围外且不记失败），`npm run typecheck` 干净，`npm run build` 已重新生成 `lib/client.js`。
+
 ### 已完成：投稿 awesome-dsh-plugin（2026-10-11，第六轮）
 
 用户原话（m00829）："提交进 awesome-dsh-plugin 目录 开吧"。

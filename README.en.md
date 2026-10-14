@@ -36,7 +36,7 @@ five tabs:
 
 | Tab | Contents |
 |---|---|
-| 可用更新 / Updates | what each profile can update, with per-row selection, "update selected", "update all", and a per-row "lock" |
+| 可用更新 / Updates | what each profile can update, with per-row selection, "update selected", "update all", and a per-row "lock". Rows whose new version exceeds the recorded range are marked "out of range", and a banner says why "update all" cannot move them |
 | 已安装 / Installed | the dependencies recorded in each profile, their ranges and sources, plus "roll back the last update" |
 | 发现 / Discover | the plugin market's official catalog: search, filter by category, install in one click (below) |
 | 已锁定 / Locked | packages whose updates are no longer offered, with an unlock button |
@@ -69,8 +69,11 @@ Two buttons in the top right:
 
 > Note: `dsh plugin add <pkg>@<version-or-range>` records the **resolved exact version**
 > (measured pnpm behaviour, not the dsh wrapper). Plain `apply` will correctly leave such a
-> pin alone, and the tool says so - "updates are offered and blocked by the recorded range" -
-> at which point `latest=true` moves it (still bounded by the release-age policy).
+> pin alone, and the tool says so - "updates are offered and blocked by the recorded range".
+> A 0.x range such as `^0.24.1` admits only 0.24.x, so 0.26.0 counts as out of range too; those
+> rows are marked "out of range" on the page (the verdict comes from `wanted` in
+> `dsh plugin outdated --json` - the CLI own call, not ours). `latest=true` moves it
+> (still bounded by the release-age policy).
 
 ## Discover reads the plugin market's official catalog
 

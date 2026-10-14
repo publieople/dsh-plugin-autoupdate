@@ -77,7 +77,7 @@ test('status advertises the routes it registered, so a stale host is detectable'
   // only loaded at process start - so a page refresh can show tabs whose routes
   // the running host does not have (that is how 发现 404ed on 2026-10-09). The
   // page compares this list instead of rendering an empty catalog.
-  assert.deepEqual(payload.features, ['status', 'apply', 'rollback', 'restart', 'catalog', 'install', 'lock', 'unlock', 'settings'])
+  assert.deepEqual(payload.features, ['status', 'apply', 'rollback', 'restart', 'catalog', 'install', 'lock', 'unlock', 'settings', 'outOfRange'])
   assert.equal(typeof payload.version, 'string')
   assert.match(payload.version, /^\d+\.\d+\.\d+/)
 })

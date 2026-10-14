@@ -25,6 +25,10 @@ export const zh: Record<string, string> = {
   'banner.hostOld1': '宿主插件还是旧版本：这个界面是新构建的，运行中的宿主进程还是上次启动时加载的代码（没有 /catalog 路由）。',
   'banner.hostOld2': '「刷新界面」不够 —— 请完全退出 DSH（托盘图标 → 退出，不是关窗口）再重开。',
 
+  'banner.outOfRange': '有 {count} 个「新版本」超出了 profile 里记录的范围（例如 ^0.24.1 只放行 0.24.x）。\u300c全部更新\u300d跑的是 pnpm update，它不会装这些版本 —— 这就是点完看着没变化的原因。',
+  'banner.outOfRangeHint': '要跨过这条线，勾上右边的「忽略版本范围 (--latest)」再更新（仍然只升 pnpm 发布时长策略放行的版本）；不想升就点该行的「锁定」。',
+  'banner.rangeOld': '运行中的宿主插件还不带「范围外」判定（旧构建）—— 完全退出 DSH 再重开后，这一页才会标出哪些新版本超出了范围。',
+
   'tab.updates': '可用更新',
   'tab.installed': '已安装',
   'tab.discover': '发现',
@@ -98,6 +102,10 @@ export const zh: Record<string, string> = {
   'col.lockedAt': '锁定时版本',
   'col.canUpdateTo': '当前可升到',
   'col.alreadyLatest': '已是最新',
+  'col.note': '说明',
+
+  'badge.outOfRange': '范围外',
+  'badge.outOfRangeHint': '这个版本不在 package.json 记录的范围内，普通更新（pnpm update）不会装它；勾上 --latest 才会。',
 
   'empty.updates': '没有可用更新 —— 解析器允许的版本都已装上。',
   'empty.installed': '没有已安装的插件。',
@@ -118,6 +126,7 @@ export const zh: Record<string, string> = {
   'auto.reasonFailed': '检查失败',
   'auto.applied': '已自动更新 {count} 项：{list}',
   'auto.skipped': '跳过（上次失败；换新版本会重试）：{list}',
+  'auto.outOfRangeSkipped': '范围外，自动更新不会碰（要跨范围得勾 --latest）：{list}',
   'auto.lastError': '上次自动处理出错：{reason}',
   'auto.clearFailures': '清除失败记忆',
   'auto.restartNote': '更新后要重启 DSH 才生效。不重启也没关系：宿主插件在进程启动时加载，下次开 DSH 自然就是新版本。',
@@ -142,6 +151,10 @@ export const en: Record<string, string> = {
   'banner.restartRequired': 'Updates applied - a DSH restart is required for them to take effect (host plugins reload; browser plugins also need a page refresh).',
   'banner.hostOld1': 'The host plugin is an older build: this page is new, but the running host process still carries the code it loaded at start (no /catalog route).',
   'banner.hostOld2': '"Refresh UI" is not enough - quit DSH completely (tray icon -> Quit, not just the window) and reopen it.',
+
+  'banner.outOfRange': '{count} offered version(s) sit OUTSIDE the range recorded in package.json (^0.24.1 admits only 0.24.x). "Update all" runs pnpm update, so it will not install them - which is why clicking it changed nothing.',
+  'banner.outOfRangeHint': 'To cross that line, tick "Ignore ranges (--latest)" on the right and update again (pnpm\'s release-age policy still applies); if you would rather not, use Lock on the row.',
+  'banner.rangeOld': 'The running host plugin has no out-of-range verdict (older build) - quit DSH completely and reopen it, and this page will mark which new versions exceed the range.',
 
   'tab.updates': 'Updates',
   'tab.installed': 'Installed',
@@ -216,6 +229,10 @@ export const en: Record<string, string> = {
   'col.lockedAt': 'Version at lock',
   'col.canUpdateTo': 'Can update to',
   'col.alreadyLatest': 'already current',
+  'col.note': 'Note',
+
+  'badge.outOfRange': 'out of range',
+  'badge.outOfRangeHint': 'This version is outside the range recorded in package.json, so a plain update (pnpm update) will not install it; only --latest crosses that line.',
 
   'empty.updates': 'No updates available - everything the resolver allows is installed.',
   'empty.installed': 'No plugins installed.',
@@ -236,6 +253,7 @@ export const en: Record<string, string> = {
   'auto.reasonFailed': 'check failed',
   'auto.applied': 'Applied {count} automatically: {list}',
   'auto.skipped': 'Skipped (failed before; a new version is retried): {list}',
+  'auto.outOfRangeSkipped': 'Out of range, so auto-update leaves them alone (--latest crosses that line): {list}',
   'auto.lastError': 'The last automatic run errored: {reason}',
   'auto.clearFailures': 'Forget past failures',
   'auto.restartNote': 'Updated host plugins load on the next DSH start. Not restarting now is fine: the next launch picks them up.',
