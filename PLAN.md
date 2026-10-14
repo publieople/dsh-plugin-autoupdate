@@ -124,6 +124,15 @@
 - 自动更新（`lib/auto.js`）：`planAutoApply` 把范围外的行按 `out-of-range` 跳过并**不再写进失败记忆**
   （它们不是失败，是 profile 自己的决定），auto tab 用单独一行 `auto.outOfRangeSkipped` 说明；
   当可应用的集合为空时连 CLI 都不启动。
+- 发布与安装：tag `v0.3.2` 触发 `publish.yml`（OIDC）已发到 npm（`dist-tags.latest = 0.3.2`，run 38534373794）。
+  桌面 profile 的依赖是 `github:publieople/dsh-plugin-autoupdate` 而不是 npm 包，所以用同一条 spec 再跑
+  `dsh plugin --profile desktop add github:publieople/dsh-plugin-autoupdate`，让 pnpm 把 lockfile 重新解析到提交 `b9bf5d4`
+  （装前手动快照 `desktop\.plugin-backup-manual-20261014162222`）。**宿主半边必须完全退出 DSH 再重开**——
+  只刷新页面时，新客户端会发现 `features` 里没有 `outOfRange` 并自己提示「退出 DSH 重开」。
+- 真机验证：用装好的那份 `checkProfile` 直接跑 desktop profile（只读），三行都是 `wanted === current` → `OUT-OF-RANGE`
+  （dsh-better-sidebar 0.25.0 / dsh-context 0.69.1 / dsh-whale-widget 0.4.2）。
+- 注意：pnpm 眼里这几行的 `latest` 比 registry 的 dist-tag 还旧一拍（0.25.0 vs 0.26.0、0.69.1 vs 0.70.0）；
+  所以勾 `--latest` 装到的也未必是 dist-tag 最新那个版本。这是 pnpm 的口径，本插件不去修正（第 2 条约束）。
 - 验收：`npm test` 80/80（新增 4 条：JSON 判定与 `outOfRange`、无 JSON 回落、`--json` 参数、
   `planAutoApply` 跳过范围外且不记失败），`npm run typecheck` 干净，`npm run build` 已重新生成 `lib/client.js`。
 
