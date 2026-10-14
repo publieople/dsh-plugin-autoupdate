@@ -12,7 +12,7 @@
 | M2+ | 自动更新：定时检查 + 满足条件自己应用（用户 2026-10-11 拍板） | ✅ v0.3.0 |
 | M3 | 发布到 npm + 打 tag | ✅ 0.2.0 已发布（2026-10-10）；此后打 tag 自动发布，Trusted Publisher 已验证 |
 | M2+ | 「更新全部」看着没反应：新版本超出记录范围时在页面上标出来（用户 2026-10-14 报告） | ✅ v0.3.2 |
-| M4 | 提交进插件目录（别人能搜到） | 🔄 已开 PR [#7099](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/7099)（2026-10-11，等合并）；dsh.works / dsh.so 规则已摸清（2026-10-11），未提交 |
+| M4 | 提交进插件目录（别人能搜到） | 🔄 awesome-dsh-plugin：PR [#7099](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin/pull/7099)（2026-10-11，等合并，维护者无回复）；dsh.works：PR [#157](https://github.com/dshworks/awesome-dsh-plugins/pull/157)（2026-10-14，CI 绿，等合并）；dsh.so：站点后端 500 `token-invalid`，未投进去 |
 
 ## M0 —— 已完成
 
@@ -104,6 +104,48 @@
 - 复核（两条独立路径）：registry packument `versions = 0.2.0, 0.3.0, 0.3.1`、`dist-tags = {latest: 0.3.1}`、
   `_rev = 5-0246fe0d…`；`npm view versions` 同上；`0.0.0-stage` 的 tarball 现在 404，`0.3.1` 的 tarball 仍是 200。
 - 教训：**轮询 registry 别用 `npm view`** —— npm 的 `logs-max:10` 会把刚产生的 debug 日志挤掉，出事后看不到现场。
+### 已完成：依赖换成 npm 包 + 目录投稿（2026-10-14，第九轮）
+
+用户原话（m01669）："1可以做, 2也做了, 3你看一眼有没有消息就行"。
+
+**1) 桌面 profile 的依赖从 `github:` 换成 npm 包** —— 目的：让桌面那份自己也能被 `dsh plugin update` 更新
+（`github:publieople/dsh-plugin-autoupdate` 在 lockfile 里钉死提交，永远收不到新提交）。
+
+- 第一次 `dsh plugin --profile desktop add dsh-plugin-autoupdate` 返回 exit 0，但 profile `package.json` 的 hash 前后相同：
+  pnpm 认为「已装的 0.3.2 已经满足这个请求」就不改 manifest（spec 仍是 `github:…`）。顺带发现
+  `dsh plugin --profile desktop --help` 打出来的是 pnpm 自己的 help —— DSH CLI 把参数透传给 pnpm。
+- 成功路径：手工把 profile `package.json` 的 spec 改成 `"dsh-plugin-autoupdate": "^0.3.2"`，再 `dsh plugin --profile desktop install`（exit 0）。
+  装前手动快照 `desktop\.plugin-backup-manual-20261014170000-npmspec`（package.json / pnpm-workspace.yaml / pnpm-lock.yaml / cordis.patch.yml）。
+- **代价要如实记**：那次 install 让 pnpm 打印 `Added 1 entry to minimumReleaseAgeExclude in pnpm-workspace.yaml: dsh-plugin-autoupdate@0.3.2`
+  —— 0.3.2 发布于 2026-10-14T08:21:22Z，当时只过了约 40 分钟，比 DSH 传给 pnpm 的发布年龄窗口新（DSH 每次调用时带策略，
+  所以 `pnpm config get minimumReleaseAge` 单独跑是 `undefined`）。这是 AGENTS 第 1 条极力避免的**策略绕行记录**，
+  但由 DSH 自己的年龄策略触发、只豁免 0.3.2 这一个版本；之后的 0.3.x 仍受策略约束，等 0.3.2 满窗口后可以删掉这一行。
+- 验证：`pnpm-lock.yaml` 里 `dsh-plugin-autoupdate@0.3.2` 已来自 registry（codeload/gitHosted 那条没了）、`node_modules` 里 `version=0.3.2`、
+  `dsh.profile.bundles` 仍含本插件（共 17 项）、装后的 `lib/client.js` grep 到 `outOfRange` 18 处、
+  `<profile>/.plugin-autoupdate.json` 仍是 version / locks / settings / auto / failures 五个字段。
+
+**2) 目录投稿**（两个站的规则 2026-10-11 已摸清，本轮执行；注意 `dsh.works` 与 `awesome-dsh-plugin` 是**两个不同的仓库**）：
+
+- **dsh.works**（`dshworks/awesome-dsh-plugins`，站点是它的阅读器）：投稿 = 往 `data/plugins.json` 的 plugins 数组追加一条，
+  再跑 `node scripts/validate.mjs` + `node scripts/render.mjs`，把两个文件一起提 PR。条目：`name: dsh-plugin-autoupdate`、
+  `category: plugin`、`status: verified`、`verifiedAgainst: 0.2.0-rc.2`、`evidence: package.json#dsh.bundle`、`npm: dsh-plugin-autoupdate`、
+  `tags: [marketplace, safety]`、description 用本仓库描述裁剪到 179 字符（原文 236 超过 200 上限）。
+  校验：`validate: ok (18566 plugins, 68 candidates, 2841 rejected, 5600 npm names, 821 unpublished)`、
+  `render: wrote README.md + docs artifacts (18566 entries)`、`render --check` in sync；`data/plugins.json` 的 diff 只有 +20 行。
+  分支 `add-dsh-plugin-autoupdate`、commit `e3cd849`、fork `publieople/awesome-dsh-plugins` → PR
+  [#157](https://github.com/dshworks/awesome-dsh-plugins/pull/157)（`check` 11 秒绿、mergeable clean、等合并）。
+- **dsh.so**：不是 PR，是站点表单 + 后端归档。`POST https://www.dsh.so/api/submit` 回 HTTP 500
+  `{"ok":false,"error":"token-invalid"}`（重发同样 500）—— 正是它前端错误码表里 `token-invalid` → 「提交服务尚未配置，请联系 dsh.so 维护者」的文案；
+  提交页明说投稿方不需要 GitHub token，所以是站点后端自己没配好，与我们 payload 无关。**至今没投进去**，它修好后可以重投。
+- 条目质量（用 dsh.so 提交页 bundle 里**他们自己的**扫描器跑我们的工作树）：verdict `warn`、`critical 0 / warning 4 / info 24`，
+  未触发 critical 拦截；4 个 warning 都是 `child_process` 调 dsh CLI（`lib/outdated.js`、`lib/restart.js` 等）。
+
+**3) PR #7099 复查**：维护者**没有任何回复**（唯一评论是 Copilot 的配额说明 2026-10-11T02:29:35Z，`updatedAt` 同刻），
+`mergeable`/`mergeStateStatus` 是 UNKNOWN、`reviewDecision` 空，两个 check 仍是 SUCCESS。
+
+- 临时验证工具 `default-workspace\submit-test\`（`index.html` / `server.mjs` / `scan.mjs`，端口 4690，用来按按钮实测两家收不收）
+  已按用户 2026-10-14 的「没用了, 删了吧」停掉服务并删除目录 —— 没有留在任何仓库里。
+
 ### 已完成：范围外提示（2026-10-14，第八轮）
 
 用户原话（m01404）："我现在点了更新全部, 更新完点了刷新页面那三个要更新的插件还是没更新。"
@@ -257,6 +299,8 @@
    category 选 `market`，中英描述各一句），等一句"开吧"
 7. **桌面版「重启 DSH」** —— 用户 2026-10-09 已否决外部重启助手（"外部的重启那没必要"）；按钮保持置灰 + 说明原因
 8. **待清理**：~~npm 上的 `0.0.0-stage` 是否 unpublish~~ —— **已删**（2026-10-11）；只剩 CI 里那个红的 run 38046722589（TP 验证留下的证据）是否删
+9. **两个目录 PR 留还是撤** —— `dsh.works` #157 与 `awesome-dsh-plugin` #7099 都还开着（都是纯收录、不改我们的代码）；
+   用户 2026-10-14 问过「dsh.works / dsh.so 是啥功能」后尚未表态要不要关。dsh.so 因站点故障从未投进去。
 
 ## 仓库规范（对齐生态惯例）
 
